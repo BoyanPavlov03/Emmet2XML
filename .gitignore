@@ -1,0 +1,30 @@
+# Database
+data/*.db
+data/*.sqlite
+data/*.sqlite3
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Temp files
+*.tmp
+*.bak
+
+# PHP
+vendor/
+composer.lock
+
+# Session files
+sessions/
