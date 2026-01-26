@@ -4,11 +4,8 @@
  */
 
 const EmmetParser = {
-    // Текуща позиция в израза
     pos: 0,
     input: '',
-    maxIterations: 10000, // Защита от безкрайни цикли
-    iterations: 0,
     
     /**
      * Парсва Emmet израз и връща AST
@@ -16,111 +13,322 @@ const EmmetParser = {
     parse(input) {
         this.pos = 0;
         this.input = input.trim();
-        this.iterations = 0;
         
         if (!this.input) {
             return [];
         }
         
-        // Проверка дали входът изглежда като XML вместо Emmet
         if (this.input.startsWith('<') && this.input.includes('</')) {
             console.warn('EmmetParser: Input looks like XML, not Emmet');
             return [];
         }
         
-        return this.parseGroup();
-    },
-    
-    /**
-     * Парсва група от елементи (най-високо ниво)
-     */
-    parseGroup() {
-        const nodes = [];
-        let currentNodes = []; // Следим всички текущи nodes (за множествени елементи)
+        // Stack-based parsing
+        // stack[i] = { parent: nodeArray, siblings: nodeArray, _isRoot: bool }
+        // parent = масив към който добавяме
+        // siblings = последните добавени елементи (за > оператор)
+        // _isRoot = дали parent е root масив или масив от parent nodes
+        const rootNodes = [];
+        let context = {
+            parent: rootNodes,
+            siblings: [],
+            _isRoot: true
+        };
+        let stack = [context];
         
         while (this.pos < this.input.length) {
-            // Защита от безкрайни цикли
-            if (++this.iterations > this.maxIterations) {
-                console.error('EmmetParser: Max iterations reached, aborting');
-                break;
-            }
+            this.skipWhitespace();
+            if (this.pos >= this.input.length) break;
             
             const char = this.input[this.pos];
             
-            if (char === '(') {
-                // Група в скоби
-                this.pos++; // skip '('
-                const groupNodes = this.parseGroup();
+            if (char === '>') {
+                // Child operator: следващите елементи са деца на siblings
+                this.pos++;
+                this.skipWhitespace();
                 
-                // Проверка за multiplication след групата
+                if (context.siblings.length > 0) {
+                    // Създаваме нов контекст - siblings стават parent nodes
+                    const newContext = {
+                        parent: context.siblings,
+                        siblings: [],
+                        _isRoot: false  // parent са nodes, не root масив
+                    };
+                    stack.push(newContext);
+                    context = newContext;
+                }
+                
+                // Специален случай: >{text} добавя текст към текущите siblings
+                if (this.input[this.pos] === '{') {
+                    this.pos++; // skip '{'
+                    const text = this.parseText();
+                    
+                    // Търсим siblings от текущия или предишния контекст
+                    let targetSiblings = context.siblings;
+                    if (targetSiblings.length === 0 && stack.length > 1) {
+                        // Проверяваме предишните контексти
+                        for (let i = stack.length - 2; i >= 0; i--) {
+                            if (stack[i].siblings && stack[i].siblings.length > 0) {
+                                targetSiblings = stack[i].siblings;
+                                break;
+                            }
+                        }
+                    }
+                    
+                    // Добавяме текст към всички siblings
+                    for (const s of targetSiblings) {
+                        s.text = s._index ? this.replaceIndex(text, s._index) : text;
+                    }
+                    
+                    // Не сменяме контекста
+                    continue;
+                }
+                
+                // Ако следва група, не парсваме atom тук - групата ще се обработи на следващата итерация
+                if (this.input[this.pos] === '(') {
+                    continue;
+                }
+                
+                const nodes = this.parseAtom();
+                if (nodes.length > 0) {
+                    // Събираме ВСИЧКИ добавени елементи
+                    const allAdded = [];
+                    
+                    // Добавяме към всички родители
+                    for (const p of context.parent) {
+                        for (const n of nodes) {
+                            // Клонираме node-а
+                            let clone = this.deepCloneNode(n);
+                            
+                            // Ако parent има _index, заместваме $ в текста/атрибутите
+                            if (p._index) {
+                                clone = this.cloneNodeWithIndex(clone, p._index);
+                            }
+                            
+                            // Запазваме оригиналния _index на node-а (за вложени multipliers)
+                            if (n._index !== undefined) {
+                                clone._index = n._index;
+                            }
+                            
+                            p.children.push(clone);
+                            allAdded.push(clone);
+                        }
+                    }
+                    // siblings са ВСИЧКИ добавени елементи
+                    context.siblings = allAdded;
+                }
+                
+            } else if (char === '+') {
+                // Sibling operator: добавяме на същото ниво като последните siblings
+                this.pos++;
+                this.skipWhitespace();
+                
+                const nodes = this.parseAtom();
+                if (nodes.length > 0) {
+                    // Ако сме в група или на root level - добавяме към текущия parent
+                    if (context._isGroup || stack.length === 1) {
+                        for (const n of nodes) {
+                            context.parent.push(n);
+                        }
+                        context.siblings = nodes;
+                    } else {
+                        // Сме след > operator - трябва да добавим към parent на siblings
+                        // т.е. към предния контекст
+                        const parentContext = stack[stack.length - 2];
+                        if (parentContext && parentContext.parent) {
+                            if (parentContext.parent.length > 0 && parentContext.parent[0].children) {
+                                // parent е nodes - добавяме като деца
+                                const addedNodes = [];
+                                for (const p of parentContext.parent) {
+                                    for (const n of nodes) {
+                                        const clone = this.deepCloneNode(n);
+                                        p.children.push(clone);
+                                        addedNodes.push(clone);
+                                    }
+                                }
+                                // Обновяваме context.parent да сочи към децата на първия parent
+                                // за да може следващият > да работи правилно
+                                if (parentContext.parent[0].children.length > 0) {
+                                    context.parent = [parentContext.parent[0].children[parentContext.parent[0].children.length - 1]];
+                                    context.siblings = context.parent;
+                                }
+                            } else {
+                                // parent е root array
+                                for (const n of nodes) {
+                                    parentContext.parent.push(n);
+                                }
+                                context.siblings = nodes;
+                            }
+                        }
+                    }
+                }
+                
+            } else if (char === '^') {
+                // Climb up - качваме се едно ниво в DOM дървото
+                // Това означава следващият елемент ще е sibling на текущия parent,
+                // т.е. дете на grandparent
+                this.pos++;
+                if (stack.length > 1) {
+                    stack.pop();
+                    context = stack[stack.length - 1];
+                }
+                // Продължаваме с парсване
+                
+            } else if (char === '(') {
+                // Group start
+                this.pos++;
+                const groupContent = [];
+                const groupContext = {
+                    parent: groupContent,
+                    siblings: [],
+                    _isGroup: true,
+                    _isRoot: true, // groupContent е празен масив, работи като root
+                    _outerContext: context // Запомняме външния контекст
+                };
+                stack.push(groupContext);
+                context = groupContext;
+                
+            } else if (char === ')') {
+                // Group end
+                this.pos++;
+                
+                // Намираме груповия контекст
+                let groupContent = [];
+                let outerContext = null;
+                while (stack.length > 1) {
+                    const ctx = stack.pop();
+                    if (ctx._isGroup) {
+                        groupContent = ctx.parent;
+                        outerContext = ctx._outerContext;
+                        break;
+                    }
+                }
+                context = stack[stack.length - 1];
+                
+                // Multiplier след група
                 const multiplier = this.parseMultiplier();
                 
-                if (multiplier > 1) {
-                    for (let i = 0; i < multiplier; i++) {
-                        const cloned = this.cloneNodes(groupNodes, i + 1);
-                        if (currentNodes.length > 0) {
-                            for (const cn of currentNodes) {
-                                cn.children.push(...this.deepCloneNodes(cloned));
+                // Добавяме групата към правилното място
+                // Ако външният контекст е от > operator (има parent с nodes)
+                // добавяме като деца
+                if (outerContext && outerContext.parent && outerContext.parent.length > 0 && outerContext.parent[0].children !== undefined) {
+                    // Групата е дете - добавяме към children на parent nodes
+                    for (const p of outerContext.parent) {
+                        if (multiplier > 1) {
+                            for (let i = 0; i < multiplier; i++) {
+                                for (const node of groupContent) {
+                                    p.children.push(this.cloneNodeWithIndex(this.deepCloneNode(node), i + 1));
+                                }
                             }
                         } else {
-                            nodes.push(...cloned);
+                            for (const node of groupContent) {
+                                p.children.push(this.deepCloneNode(node));
+                            }
                         }
                     }
-                } else {
-                    if (currentNodes.length > 0) {
-                        for (const cn of currentNodes) {
-                            cn.children.push(...this.deepCloneNodes(groupNodes));
+                    // siblings стават последните добавени
+                    if (outerContext.parent[0].children.length > 0) {
+                        context.siblings = outerContext.parent[0].children.slice(-groupContent.length * (multiplier > 1 ? multiplier : 1));
+                    }
+                } else if (Array.isArray(context.parent)) {
+                    // Групата е на root level
+                    if (multiplier > 1) {
+                        for (let i = 0; i < multiplier; i++) {
+                            for (const node of groupContent) {
+                                context.parent.push(this.cloneNodeWithIndex(node, i + 1));
+                            }
                         }
                     } else {
-                        nodes.push(...groupNodes);
+                        for (const node of groupContent) {
+                            context.parent.push(node);
+                        }
                     }
+                    context.siblings = groupContent;
                 }
-            } else if (char === ')') {
-                this.pos++; // skip ')'
-                break; // Край на групата
-            } else if (char === '>') {
-                // Child - добавяме към ВСИЧКИ текущи nodes
-                this.pos++;
-                const child = this.parseElement();
-                if (child && currentNodes.length > 0) {
-                    // Добавяме деца към всички текущи nodes
-                    for (const cn of currentNodes) {
-                        const childCopy = this.deepCloneNode(child);
-                        cn.children.push(childCopy);
-                    }
-                    // Текущите nodes стават най-дълбоките деца
-                    currentNodes = this.getAllDeepestChildren(currentNodes);
-                }
-            } else if (char === '+') {
-                // Sibling
-                this.pos++;
-                const sibling = this.parseElement();
-                if (sibling) {
-                    nodes.push(sibling);
-                    currentNodes = sibling._multiple ? [...sibling._multiple] : [sibling];
-                }
-            } else if (char === '^') {
-                // Climb up
-                this.pos++;
-                const sibling = this.parseElement();
-                if (sibling) {
-                    nodes.push(sibling);
-                    currentNodes = sibling._multiple ? [...sibling._multiple] : [sibling];
-                }
-            } else if (char === ' ' || char === '\n' || char === '\t') {
-                this.pos++; // skip whitespace
+                
             } else {
-                // Елемент
-                const element = this.parseElement();
-                if (element) {
-                    nodes.push(element);
-                    // Ако елементът е множествен, следим всички копия
-                    currentNodes = element._multiple ? [...element._multiple] : [element];
+                // Елемент на текущото ниво
+                const nodes = this.parseAtom();
+                if (nodes.length > 0) {
+                    if (context._isRoot) {
+                        // Root level - добавяме директно към масива
+                        for (const n of nodes) {
+                            context.parent.push(n);
+                        }
+                        context.siblings = nodes;
+                    } else {
+                        // Parent са nodes - добавяме към техните children
+                        const allAdded = [];
+                        for (const p of context.parent) {
+                            for (const n of nodes) {
+                                const clone = this.deepCloneNode(n);
+                                p.children.push(clone);
+                                allAdded.push(clone);
+                            }
+                        }
+                        context.siblings = allAdded;
+                    }
+                } else {
+                    break;
                 }
             }
         }
         
-        return nodes;
+        return rootNodes;
+    },
+    
+    /**
+     * Парсва един атом (елемент)
+     */
+    parseAtom() {
+        this.skipWhitespace();
+        if (this.pos >= this.input.length) return [];
+        
+        const char = this.input[this.pos];
+        if (char === '(' || char === ')' || char === '>' || char === '+' || char === '^') {
+            return [];
+        }
+        
+        const element = this.parseElement();
+        if (!element) return [];
+        
+        if (element._multiple) {
+            return element._multiple;
+        }
+        
+        return [element];
+    },
+    
+    /**
+     * Clone node with $ replaced by index
+     */
+    cloneNodeWithIndex(node, index) {
+        const clone = {
+            tag: node.tag,
+            id: node.id ? this.replaceIndex(node.id, index) : null,
+            classes: node.classes.map(c => this.replaceIndex(c, index)),
+            attributes: {},
+            text: node.text ? this.replaceIndex(node.text, index) : null,
+            children: node.children.map(c => this.cloneNodeWithIndex(c, index)),
+            multiplier: 1
+        };
+        
+        for (const [key, value] of Object.entries(node.attributes)) {
+            clone.attributes[key] = typeof value === 'string' 
+                ? this.replaceIndex(value, index) 
+                : value;
+        }
+        
+        return clone;
+    },
+    
+    /**
+     * Пропуска whitespace
+     */
+    skipWhitespace() {
+        while (this.pos < this.input.length && /\s/.test(this.input[this.pos])) {
+            this.pos++;
+        }
     },
     
     /**
@@ -180,7 +388,9 @@ const EmmetParser = {
         if (node.multiplier > 1) {
             const nodes = [];
             for (let i = 0; i < node.multiplier; i++) {
-                nodes.push(this.cloneNode(node, i + 1));
+                const clone = this.cloneNode(node, i + 1);
+                clone._index = i + 1; // Запазваме индекса за деца
+                nodes.push(clone);
             }
             return { _multiple: nodes };
         }
@@ -426,6 +636,11 @@ const EmmetParser = {
             multiplier: 1
         };
         
+        // Копираме _index ако има
+        if (node._index !== undefined) {
+            clone._index = node._index;
+        }
+        
         return clone;
     },
     
@@ -527,3 +742,8 @@ const EmmetParser = {
         return flatNodes.map(n => generateNode(n, 0)).join('\n');
     }
 };
+
+// Export for Node.js
+if (typeof module !== 'undefined' && module.exports) {
+    module.exports = EmmetParser;
+}
