@@ -94,6 +94,15 @@ const App = {
             this.applyRules();
         });
         
+        // Analysis
+        document.getElementById('btn-parse-table')?.addEventListener('click', () => {
+            this.parseTable();
+        });
+        
+        document.getElementById('column-select')?.addEventListener('change', () => {
+            this.showColumnData();
+        });
+        
         // Keyboard shortcuts
         document.addEventListener('keydown', (e) => {
             if (e.ctrlKey && e.key === 'Enter') {
@@ -495,6 +504,403 @@ const App = {
         } catch (error) {
             output.value = 'Грешка: ' + error.message;
         }
+    },
+    
+    // Storage for parsed table data
+    tableData: null,
+    tableHeaders: [],
+    
+    /**
+     * Парсва таблица от XML или Emmet
+     */
+    parseTable() {
+        const format = document.getElementById('analysis-format').value;
+        const input = document.getElementById('analysis-input').value;
+        const controlsEl = document.getElementById('analysis-controls');
+        const columnSelect = document.getElementById('column-select');
+        const resultsContent = document.getElementById('analysis-results-content');
+        
+        if (!input.trim()) {
+            resultsContent.innerHTML = '<p class="empty-state">Моля, въведи таблица.</p>';
+            controlsEl.style.display = 'none';
+            return;
+        }
+        
+        let xml = input;
+        
+        // Convert Emmet to XML if needed
+        if (format === 'emmet') {
+            const result = Transformer.transform(input, 'emmet2xml', this.getSettings());
+            if (!result.success) {
+                resultsContent.innerHTML = `<p class="empty-state">Грешка при парсване на Emmet: ${this.escapeHtml(result.error)}</p>`;
+                controlsEl.style.display = 'none';
+                return;
+            }
+            xml = result.result;
+        }
+        
+        // Parse table from XML
+        const tableResult = this.extractTableData(xml);
+        
+        if (!tableResult.success) {
+            resultsContent.innerHTML = `<p class="empty-state">${this.escapeHtml(tableResult.error)}</p>`;
+            controlsEl.style.display = 'none';
+            return;
+        }
+        
+        this.tableData = tableResult.data;
+        this.tableHeaders = tableResult.headers;
+        
+        // Populate column dropdown
+        columnSelect.innerHTML = '<option value="">-- Избери колона --</option>';
+        this.tableHeaders.forEach((header, index) => {
+            const option = document.createElement('option');
+            option.value = index;
+            option.textContent = header || `Колона ${index + 1}`;
+            columnSelect.appendChild(option);
+        });
+        
+        // Show controls
+        controlsEl.style.display = 'block';
+        document.getElementById('column-count').textContent = `Намерени ${this.tableHeaders.length} колони и ${this.tableData.length} реда с данни`;
+        
+        // Show preview
+        this.showTablePreview();
+    },
+    
+    /**
+     * Извлича данни от XML таблица, списък или структурирани данни
+     */
+    extractTableData(xml) {
+        try {
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(xml, 'text/xml');
+            
+            const parseError = doc.querySelector('parsererror');
+            if (parseError) {
+                return { success: false, error: 'Невалиден XML формат.' };
+            }
+            
+            const root = doc.documentElement;
+            
+            // 1. Try traditional table
+            const tableResult = this.extractFromTable(root);
+            if (tableResult.success) return tableResult;
+            
+            // 2. Try lists (ul, ol, li)
+            const listResult = this.extractFromList(root);
+            if (listResult.success) return listResult;
+            
+            // 3. Try structured data (list/item, items/item, etc.)
+            const structuredResult = this.extractFromStructured(root);
+            if (structuredResult.success) return structuredResult;
+            
+            return { success: false, error: 'Не е намерена таблица, списък или структурирани данни.\nПоддържани формати:\n- <table> с <tr>/<td>\n- <ul>/<ol> с <li>\n- Структурирани данни като <list>/<item> или <items>/<item>' };
+            
+        } catch (error) {
+            return { success: false, error: 'Грешка при парсване: ' + error.message };
+        }
+    },
+    
+    /**
+     * Извлича данни от традиционна HTML/XML таблица
+     */
+    extractFromTable(root) {
+        let table = root.querySelector('table') || root;
+        const rows = table.querySelectorAll('tr, row');
+        
+        if (rows.length === 0) {
+            return { success: false };
+        }
+        
+        let headers = [];
+        const data = [];
+        
+        rows.forEach((row, rowIndex) => {
+            const cells = row.querySelectorAll('th, td, cell');
+            const rowData = [];
+            
+            cells.forEach((cell, cellIndex) => {
+                const text = cell.textContent.trim();
+                
+                if (rowIndex === 0 && (cell.tagName.toLowerCase() === 'th' || headers.length === 0)) {
+                    if (cell.tagName.toLowerCase() === 'th') {
+                        headers.push(text);
+                    } else if (rowIndex === 0) {
+                        headers.push(text || `Колона ${cellIndex + 1}`);
+                    }
+                }
+                rowData.push(text);
+            });
+            
+            const firstRowCells = rows[0].querySelectorAll('th');
+            if (firstRowCells.length > 0 && rowIndex === 0) {
+                return;
+            }
+            
+            if (rowData.length > 0) {
+                data.push(rowData);
+            }
+        });
+        
+        if (headers.length === 0 && data.length > 0) {
+            headers = data[0].map((_, i) => `Колона ${i + 1}`);
+        }
+        
+        if (data.length === 0) {
+            return { success: false };
+        }
+        
+        return { success: true, headers, data };
+    },
+    
+    /**
+     * Извлича данни от списъци (ul, ol, li)
+     */
+    extractFromList(root) {
+        // Find lists
+        const lists = root.querySelectorAll('ul, ol');
+        let listItems = [];
+        
+        if (lists.length > 0) {
+            // Get li elements from found lists
+            lists.forEach(list => {
+                list.querySelectorAll(':scope > li').forEach(li => listItems.push(li));
+            });
+        } else {
+            // Check for direct li elements under root or any parent
+            listItems = Array.from(root.querySelectorAll('li'));
+        }
+        
+        if (listItems.length === 0) {
+            return { success: false };
+        }
+        
+        // Check if li elements have children (structured) or just text
+        const firstLi = listItems[0];
+        const childElements = Array.from(firstLi.children).filter(el => el.nodeType === 1);
+        
+        if (childElements.length > 0) {
+            // Structured list items - extract child elements as columns
+            const headers = [];
+            const headerSet = new Set();
+            
+            // Collect all unique child tag names as headers
+            listItems.forEach(li => {
+                Array.from(li.children).forEach(child => {
+                    if (child.nodeType === 1 && !headerSet.has(child.tagName.toLowerCase())) {
+                        headerSet.add(child.tagName.toLowerCase());
+                        headers.push(child.tagName.toLowerCase());
+                    }
+                });
+            });
+            
+            const data = listItems.map(li => {
+                return headers.map(header => {
+                    const el = li.querySelector(header);
+                    return el ? el.textContent.trim() : '';
+                });
+            });
+            
+            // Capitalize headers
+            const formattedHeaders = headers.map(h => h.charAt(0).toUpperCase() + h.slice(1));
+            
+            return { success: true, headers: formattedHeaders, data };
+        } else {
+            // Simple list - just text content
+            const data = listItems.map(li => [li.textContent.trim()]);
+            return { success: true, headers: ['Стойност'], data };
+        }
+    },
+    
+    /**
+     * Извлича данни от структурирани XML елементи (list/item, items/item, etc.)
+     */
+    extractFromStructured(root) {
+        // Common container patterns: list, items, data, records, entries
+        const containerPatterns = ['list', 'items', 'data', 'records', 'entries', 'collection', 'rows'];
+        // Common item patterns: item, record, entry, row, element
+        const itemPatterns = ['item', 'record', 'entry', 'row', 'element', 'node'];
+        
+        let container = null;
+        let items = [];
+        
+        // Try to find a container
+        for (const pattern of containerPatterns) {
+            container = root.querySelector(pattern) || (root.tagName.toLowerCase() === pattern ? root : null);
+            if (container) break;
+        }
+        
+        // If no known container, use root
+        if (!container) {
+            container = root;
+        }
+        
+        // Find items within container
+        for (const pattern of itemPatterns) {
+            items = Array.from(container.querySelectorAll(`:scope > ${pattern}`));
+            if (items.length > 0) break;
+        }
+        
+        // If no items found with known patterns, get all direct children that repeat
+        if (items.length === 0) {
+            const children = Array.from(container.children);
+            if (children.length > 1) {
+                // Check if children have same tag name (repeated structure)
+                const tagCounts = {};
+                children.forEach(child => {
+                    const tag = child.tagName.toLowerCase();
+                    tagCounts[tag] = (tagCounts[tag] || 0) + 1;
+                });
+                
+                // Find the most common repeated tag
+                let maxTag = null;
+                let maxCount = 0;
+                for (const [tag, count] of Object.entries(tagCounts)) {
+                    if (count > maxCount && count > 1) {
+                        maxTag = tag;
+                        maxCount = count;
+                    }
+                }
+                
+                if (maxTag) {
+                    items = children.filter(c => c.tagName.toLowerCase() === maxTag);
+                }
+            }
+        }
+        
+        if (items.length === 0) {
+            return { success: false };
+        }
+        
+        // Extract headers from first item's children
+        const headers = [];
+        const headerSet = new Set();
+        
+        items.forEach(item => {
+            Array.from(item.children).forEach(child => {
+                if (child.nodeType === 1) {
+                    const tagName = child.tagName.toLowerCase();
+                    if (!headerSet.has(tagName)) {
+                        headerSet.add(tagName);
+                        headers.push(tagName);
+                    }
+                }
+            });
+        });
+        
+        if (headers.length === 0) {
+            // Items don't have children, treat as simple values
+            const data = items.map(item => [item.textContent.trim()]);
+            return { success: true, headers: ['Стойност'], data };
+        }
+        
+        // Extract data
+        const data = items.map(item => {
+            return headers.map(header => {
+                const el = item.querySelector(header);
+                return el ? el.textContent.trim() : '';
+            });
+        });
+        
+        // Capitalize headers
+        const formattedHeaders = headers.map(h => h.charAt(0).toUpperCase() + h.slice(1));
+        
+        return { success: true, headers: formattedHeaders, data };
+    },
+    
+    /**
+     * Показва преглед на цялата таблица
+     */
+    showTablePreview() {
+        const resultsContent = document.getElementById('analysis-results-content');
+        
+        if (!this.tableData || this.tableData.length === 0) {
+            resultsContent.innerHTML = '<p class="empty-state">Няма данни за показване.</p>';
+            return;
+        }
+        
+        let html = '<table class="results-table"><thead><tr>';
+        html += '<th>#</th>';
+        this.tableHeaders.forEach(h => {
+            html += `<th>${this.escapeHtml(h)}</th>`;
+        });
+        html += '</tr></thead><tbody>';
+        
+        this.tableData.forEach((row, idx) => {
+            html += `<tr><td>${idx + 1}</td>`;
+            row.forEach(cell => {
+                html += `<td>${this.escapeHtml(cell)}</td>`;
+            });
+            html += '</tr>';
+        });
+        
+        html += '</tbody></table>';
+        resultsContent.innerHTML = html;
+    },
+    
+    /**
+     * Показва данни от избраната колона
+     */
+    showColumnData() {
+        const columnSelect = document.getElementById('column-select');
+        const resultsContent = document.getElementById('analysis-results-content');
+        const columnIndex = columnSelect.value;
+        
+        if (columnIndex === '' || !this.tableData) {
+            this.showTablePreview();
+            return;
+        }
+        
+        const colIdx = parseInt(columnIndex);
+        const columnName = this.tableHeaders[colIdx] || `Колона ${colIdx + 1}`;
+        const columnValues = this.tableData.map(row => row[colIdx] || '');
+        
+        // Calculate statistics
+        const uniqueValues = [...new Set(columnValues)];
+        const valueCounts = {};
+        columnValues.forEach(v => {
+            valueCounts[v] = (valueCounts[v] || 0) + 1;
+        });
+        
+        // Check if numeric
+        const numericValues = columnValues.filter(v => !isNaN(parseFloat(v)) && isFinite(v)).map(parseFloat);
+        const isNumeric = numericValues.length > columnValues.length / 2;
+        
+        let html = `<h4>Колона: ${this.escapeHtml(columnName)}</h4>`;
+        html += '<table class="results-table"><thead><tr><th>#</th><th>Стойност</th></tr></thead><tbody>';
+        
+        columnValues.forEach((value, idx) => {
+            html += `<tr><td>${idx + 1}</td><td>${this.escapeHtml(value)}</td></tr>`;
+        });
+        
+        html += '</tbody></table>';
+        
+        // Summary section
+        html += '<div class="analysis-summary"><h4>Статистика</h4>';
+        html += `<div class="summary-item"><span>Общо записи:</span><span>${columnValues.length}</span></div>`;
+        html += `<div class="summary-item"><span>Уникални стойности:</span><span>${uniqueValues.length}</span></div>`;
+        
+        const emptyCount = columnValues.filter(v => v === '').length;
+        if (emptyCount > 0) {
+            html += `<div class="summary-item"><span>Празни клетки:</span><span>${emptyCount}</span></div>`;
+        }
+        
+        if (isNumeric && numericValues.length > 0) {
+            const sum = numericValues.reduce((a, b) => a + b, 0);
+            const avg = sum / numericValues.length;
+            const min = Math.min(...numericValues);
+            const max = Math.max(...numericValues);
+            
+            html += `<div class="summary-item"><span>Сума:</span><span>${sum.toFixed(2)}</span></div>`;
+            html += `<div class="summary-item"><span>Средно:</span><span>${avg.toFixed(2)}</span></div>`;
+            html += `<div class="summary-item"><span>Минимум:</span><span>${min}</span></div>`;
+            html += `<div class="summary-item"><span>Максимум:</span><span>${max}</span></div>`;
+        }
+        
+        html += '</div>';
+        
+        resultsContent.innerHTML = html;
     },
     
     /**

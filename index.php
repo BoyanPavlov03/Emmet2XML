@@ -16,6 +16,7 @@
             <nav class="header-nav">
                 <button class="nav-btn active" data-tab="transform">Трансформация</button>
                 <button class="nav-btn" data-tab="statistics">Статистика</button>
+                <button class="nav-btn" data-tab="analysis">Анализ</button>
                 <button class="nav-btn" data-tab="history">История</button>
                 <button class="nav-btn" data-tab="rules">Правила</button>
             </nav>
@@ -126,6 +127,65 @@ nav>ul>li*5>a[href=#]{Link $}"></textarea>
                     
                     <div class="stats-results" id="stats-results">
                         <!-- Резултатите ще се появят тук -->
+                    </div>
+                </div>
+            </section>
+
+            <!-- Analysis Tab -->
+            <section id="tab-analysis" class="tab-content">
+                <div class="analysis-container">
+                    <div class="analysis-input-section">
+                        <h3>Анализ на данни</h3>
+                        <div class="analysis-format">
+                            <label>Формат на входа:</label>
+                            <select id="analysis-format">
+                                <option value="xml">XML</option>
+                                <option value="emmet">Emmet</option>
+                            </select>
+                        </div>
+                        <textarea id="analysis-input" placeholder="Поддържани формати:
+
+1. Таблици (<table>):
+<table>
+  <tr><th>Име</th><th>Оценка</th></tr>
+  <tr><td>Иван</td><td>87</td></tr>
+</table>
+
+2. Списъци (<ul>/<ol>/<li>):
+<ul>
+  <li><name>Иван</name><score>87</score></li>
+  <li><name>Мария</name><score>92</score></li>
+</ul>
+
+3. Структурирани данни (<list>/<item>):
+<list>
+  <item><name>Иван</name><score>87</score></item>
+  <item><name>Мария</name><score>92</score></item>
+</list>
+
+4. Emmet формат:
+table>tr>th{Име}+th{Оценка}^tr>td{Иван}+td{87}"></textarea>
+                        <button class="btn-primary" id="btn-parse-table">Парсирай данните</button>
+                    </div>
+                    
+                    <div class="analysis-controls" id="analysis-controls" style="display: none;">
+                        <h3>Избор на колона</h3>
+                        <div class="column-selector">
+                            <label>Колона:</label>
+                            <select id="column-select">
+                                <option value="">-- Избери колона --</option>
+                            </select>
+                        </div>
+                        <div class="column-info">
+                            <span id="column-count"></span>
+                        </div>
+                    </div>
+                    
+                    <div class="analysis-results" id="analysis-results">
+                        <h3>Данни от колоната</h3>
+                        <div class="results-content" id="analysis-results-content">
+                            <p class="empty-state">Въведи таблица и избери колона за анализ.</p>
+                        </div>
                     </div>
                 </div>
             </section>
