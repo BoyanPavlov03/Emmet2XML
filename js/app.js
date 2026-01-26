@@ -66,27 +66,27 @@ const App = {
                 }
             }
             
-            // Format XML with Ctrl+Shift+F
-            if (e.ctrlKey && e.shiftKey && e.key === 'F') {
-                const direction = document.getElementById('transform-direction').value;
-                if (direction === 'xml2emmet') {
-                    e.preventDefault();
-                    this.formatXml();
-                }
+            // Format with Ctrl+Shift+F
+            if (e.ctrlKey && e.shiftKey && (e.key === 'F' || e.key === 'f' || e.code === 'KeyF')) {
+                e.preventDefault();
+                e.stopPropagation();
+                this.formatInput();
             }
         });
         
-        // Click to select XML block
+        // Click to select block
         document.getElementById('input-editor').addEventListener('click', (e) => {
             const direction = document.getElementById('transform-direction').value;
             if (direction === 'xml2emmet') {
                 this.handleXmlBlockSelect(e.target);
+            } else {
+                this.handleEmmetBlockSelect(e.target);
             }
         });
         
-        // Format XML button
+        // Format button
         document.getElementById('btn-format-xml')?.addEventListener('click', () => {
-            this.formatXml();
+            this.formatInput();
         });
         
         // Apply all rules button
@@ -183,12 +183,20 @@ const App = {
         if (direction === 'emmet2xml') {
             inputLabel.textContent = 'Emmet Вход';
             outputLabel.textContent = 'XML Изход';
-            if (formatBtn) formatBtn.style.display = 'none';
-            if (applyRulesBtn) applyRulesBtn.style.display = 'none';
+            if (formatBtn) {
+                formatBtn.style.display = 'inline-block';
+                formatBtn.textContent = '⚙ Форматирай';
+                formatBtn.title = 'Форматирай Emmet (Ctrl+Shift+F)';
+            }
+            if (applyRulesBtn) applyRulesBtn.style.display = 'inline-block';
         } else {
             inputLabel.textContent = 'XML Вход';
             outputLabel.textContent = 'Emmet Изход';
-            if (formatBtn) formatBtn.style.display = 'inline-block';
+            if (formatBtn) {
+                formatBtn.style.display = 'inline-block';
+                formatBtn.textContent = '⚙ Форматирай';
+                formatBtn.title = 'Форматирай XML (Ctrl+Shift+F)';
+            }
             if (applyRulesBtn) applyRulesBtn.style.display = 'inline-block';
         }
     },
@@ -248,6 +256,67 @@ const App = {
         // Вмъкваме новия текст
         textarea.value = beforeCursor + newText + afterCursor;
         textarea.selectionStart = textarea.selectionEnd = cursorPos;
+    },
+    
+    /**
+     * Форматира входа според текущия режим
+     */
+    formatInput() {
+        const direction = document.getElementById('transform-direction').value;
+        if (direction === 'xml2emmet') {
+            this.formatXml();
+        } else {
+            this.formatEmmet();
+        }
+    },
+    
+    /**
+     * Форматира Emmet израз - разделя на редове за по-добра четимост
+     */
+    formatEmmet() {
+        const textarea = document.getElementById('input-editor');
+        const emmet = textarea.value.trim();
+        
+        if (!emmet) return;
+        
+        try {
+            // Форматираме Emmet израз - слагаме нови редове след определени оператори
+            let formatted = emmet;
+            
+            // Разделяме на главни секции (по + на top level)
+            // Намираме + операторите, които не са в скоби или атрибути
+            let result = '';
+            let depth = 0; // За скоби ()
+            let inBrackets = false; // За атрибути []
+            let inBraces = false; // За текст {}
+            
+            for (let i = 0; i < formatted.length; i++) {
+                const char = formatted[i];
+                
+                if (char === '(') depth++;
+                if (char === ')') depth--;
+                if (char === '[') inBrackets = true;
+                if (char === ']') inBrackets = false;
+                if (char === '{') inBraces = true;
+                if (char === '}') inBraces = false;
+                
+                // Ако сме на top level и намерим +, слагаме нов ред
+                if (char === '+' && depth === 0 && !inBrackets && !inBraces) {
+                    result += '\n+ ';
+                } else if (char === '>' && depth === 0 && !inBrackets && !inBraces) {
+                    result += '\n  > ';
+                } else if (char === '^' && depth === 0 && !inBrackets && !inBraces) {
+                    result += '\n^ ';
+                } else {
+                    result += char;
+                }
+            }
+            
+            textarea.value = result.trim();
+        } catch (error) {
+            console.error('Format Emmet error:', error);
+            alert('Грешка при форматиране: ' + error.message);
+        }
     },
     
     /**
@@ -385,6 +454,104 @@ const App = {
     },
     
     /**
+     * Селектира Emmet блок при клик (групи в скоби или елемент)
+     */
+    handleEmmetBlockSelect(textarea) {
+        const value = textarea.value;
+        const cursorPos = textarea.selectionStart;
+        
+        // Намираме границите на текущия "блок" в Emmet
+        // Блок може да е: група в скоби (), елемент с деца (до следващия + или ^), или целия израз
+        
+        let start = cursorPos;
+        let end = cursorPos;
+        
+        // Проверяваме дали сме в скоби
+        let parenDepth = 0;
+        let parenStart = -1;
+        
+        // Търсим назад за начало на група или елемент
+        for (let i = cursorPos; i >= 0; i--) {
+            const char = value[i];
+            
+            if (char === ')') parenDepth++;
+            if (char === '(') {
+                if (parenDepth > 0) {
+                    parenDepth--;
+                } else {
+                    parenStart = i;
+                    break;
+                }
+            }
+            
+            // Ако намерим + или ^ на top level, това е началото на нашия блок
+            if ((char === '+' || char === '^') && parenDepth === 0) {
+                start = i + 1;
+                break;
+            }
+            
+            if (i === 0) start = 0;
+        }
+        
+        // Ако сме намерили начало на скоби, търсим края на групата
+        if (parenStart !== -1) {
+            start = parenStart;
+            parenDepth = 1;
+            
+            for (let i = parenStart + 1; i < value.length; i++) {
+                const char = value[i];
+                if (char === '(') parenDepth++;
+                if (char === ')') {
+                    parenDepth--;
+                    if (parenDepth === 0) {
+                        end = i + 1;
+                        // Проверяваме за multiplier след скобите (*N)
+                        if (value[i + 1] === '*') {
+                            let j = i + 2;
+                            while (j < value.length && /\d/.test(value[j])) j++;
+                            end = j;
+                        }
+                        break;
+                    }
+                }
+            }
+        } else {
+            // Търсим напред за край на елемента
+            parenDepth = 0;
+            let inBrackets = false;
+            let inBraces = false;
+            
+            for (let i = cursorPos; i < value.length; i++) {
+                const char = value[i];
+                
+                if (char === '(') parenDepth++;
+                if (char === ')') parenDepth--;
+                if (char === '[') inBrackets = true;
+                if (char === ']') inBrackets = false;
+                if (char === '{') inBraces = true;
+                if (char === '}') inBraces = false;
+                
+                // Ако намерим + или ^ на top level, това е краят
+                if ((char === '+' || char === '^') && parenDepth === 0 && !inBrackets && !inBraces) {
+                    end = i;
+                    break;
+                }
+                
+                if (i === value.length - 1) end = value.length;
+            }
+        }
+        
+        // Премахваме whitespace от краищата
+        while (start < value.length && /\s/.test(value[start])) start++;
+        while (end > start && /\s/.test(value[end - 1])) end--;
+        
+        if (start < end) {
+            textarea.selectionStart = start;
+            textarea.selectionEnd = end;
+        }
+    },
+    
+    /**
      * Намира съответстващия отварящ таг
      */
     findMatchingOpeningTag(text, fromPos, tagName) {
@@ -456,24 +623,29 @@ const App = {
     },
     
     /**
-     * Прилага всички запазени правила върху маркирания XML блок
+     * Прилага всички запазени правила върху маркирания блок (XML или Emmet)
      */
     async applyAllRulesToInput() {
         const textarea = document.getElementById('input-editor');
         const fullText = textarea.value;
         const selStart = textarea.selectionStart;
         const selEnd = textarea.selectionEnd;
+        const direction = document.getElementById('transform-direction').value;
+        const isEmmetMode = direction === 'emmet2xml';
         
         // Проверяваме дали има селекция
         if (selStart === selEnd) {
-            alert('Моля, маркирай XML блок върху който да се приложат правилата.\n\nСъвет: Кликни върху таг за да селектираш целия блок.');
+            const hint = isEmmetMode 
+                ? 'Съвет: Кликни върху елемент или група за да селектираш блок.'
+                : 'Съвет: Кликни върху таг за да селектираш целия блок.';
+            alert(`Моля, маркирай блок върху който да се приложат правилата.\n\n${hint}`);
             return;
         }
         
-        const selectedXml = fullText.substring(selStart, selEnd).trim();
+        let selectedText = fullText.substring(selStart, selEnd).trim();
         
-        if (!selectedXml) {
-            alert('Моля, маркирай XML блок.');
+        if (!selectedText) {
+            alert('Моля, маркирай блок.');
             return;
         }
         
@@ -487,7 +659,20 @@ const App = {
                 return;
             }
             
-            let result = selectedXml;
+            let xmlToProcess = selectedText;
+            const settings = this.getSettings();
+            
+            // Ако сме в Emmet режим, първо конвертираме към XML
+            if (isEmmetMode) {
+                const emmetResult = Transformer.transform(selectedText, 'emmet2xml', settings);
+                if (!emmetResult.success) {
+                    alert('Грешка при парсване на Emmet: ' + emmetResult.error);
+                    return;
+                }
+                xmlToProcess = emmetResult.result;
+            }
+            
+            let result = xmlToProcess;
             let appliedCount = 0;
             
             // Прилагаме всяко правило последователно
@@ -496,6 +681,14 @@ const App = {
                 if (transformed.success && transformed.result !== result) {
                     result = transformed.result;
                     appliedCount++;
+                }
+            }
+            
+            // Ако сме в Emmet режим, конвертираме обратно към Emmet
+            if (isEmmetMode && appliedCount > 0) {
+                const xmlResult = Transformer.transform(result, 'xml2emmet', settings);
+                if (xmlResult.success) {
+                    result = xmlResult.result;
                 }
             }
             
