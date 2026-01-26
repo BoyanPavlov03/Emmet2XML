@@ -45,6 +45,18 @@ const App = {
         document.getElementById('btn-clear-input')?.addEventListener('click', () => {
             document.getElementById('input-editor').value = '';
         });
+
+        // Enable tabs in textareas
+        document.getElementById('input-editor').addEventListener('keydown', (e) => {
+            if (e.key === 'Tab') {
+                e.preventDefault();
+                const textarea = e.target;
+                const start = textarea.selectionStart;
+                const end = textarea.selectionEnd;
+                textarea.value = textarea.value.substring(0, start) + '\t' + textarea.value.substring(end);
+                textarea.selectionStart = textarea.selectionEnd = start + 1;
+            }
+        });
         
         // Copy output
         document.getElementById('btn-copy-output')?.addEventListener('click', () => {
