@@ -436,6 +436,11 @@ test('Complex nested multiplication',
     '<table><tbody><tr><td>R1C</td><td>R2C</td><td>R3C</td><td>R4C</td><td>R5C</td></tr><tr><td>R1C</td><td>R2C</td><td>R3C</td><td>R4C</td><td>R5C</td></tr><tr><td>R1C</td><td>R2C</td><td>R3C</td><td>R4C</td><td>R5C</td></tr></tbody></table>'
 );
 
+test('Complex structure with all features',
+    'root>header#mainHeader>(title{Emmet Demo}+meta[charset=utf-8])+body>(section.content*2>(article.post[data-id=$]>(h2{Post $}+p{Lorem ipsum $}))+footer>nav>ul>li.item$*3>a[href=/link$]{Link $})',
+    '<root><header id="mainHeader"><title>Emmet Demo</title><meta charset="utf-8" /><body><section class="content"><article class="post" data-id="1"><h2>Post 1</h2><p>Lorem ipsum 1</p></article><footer><nav><ul><li class="item1"><a href="/link1">Link 1</a></li><li class="item2"><a href="/link2">Link 2</a></li><li class="item3"><a href="/link3">Link 3</a></li></ul></nav></footer></section><section class="content"><article class="post" data-id="2"><h2>Post 2</h2><p>Lorem ipsum 2</p></article><footer><nav><ul><li class="item1"><a href="/link1">Link 1</a></li><li class="item2"><a href="/link2">Link 2</a></li><li class="item3"><a href="/link3">Link 3</a></li></ul></nav></footer></section></body></header></root>'
+)
+
 // ============================================
 // RESULTS
 // ============================================

@@ -142,7 +142,7 @@ const EmmetParser = {
                         const addedNodes = [];
                         for (const p of context.parent) {
                             for (const n of nodes) {
-                                const clone = this.deepCloneNode(n);
+                                let clone = this.deepCloneNode(n);
                                 // Прилагаме parent index ако има
                                 if (p._index) {
                                     clone = this.cloneNodeWithIndex(clone, p._index);
