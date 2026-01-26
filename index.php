@@ -251,8 +251,8 @@ nav>ul>li*5>a[href=#]{Link $}"></textarea>
         </div>
     </div>
 
-    <script src="js/emmet-parser.js"></script>
-    <script src="js/xml-parser.js"></script>
+    <script src="js/emmet-parser.js?v=1769417979"></script>
+    <script src="js/xml-parser.js?v=1769417979"></script>
     <script src="js/transformer.js"></script>
     <script src="js/statistics.js"></script>
     <script src="js/auth.js"></script>

@@ -123,43 +123,35 @@ const EmmetParser = {
                 this.pos++;
                 this.skipWhitespace();
                 
+                // Ако следва група '(', просто продължаваме - групата ще се добави от основния loop
+                if (this.input[this.pos] === '(') {
+                    continue;
+                }
+                
                 const nodes = this.parseAtom();
                 if (nodes.length > 0) {
-                    // Ако сме в група или на root level - добавяме към текущия parent
-                    if (context._isGroup || stack.length === 1) {
+                    // Ако сме на root level или в група - добавяме директно към parent array
+                    if (context._isRoot || context._isGroup) {
                         for (const n of nodes) {
                             context.parent.push(n);
                         }
                         context.siblings = nodes;
                     } else {
-                        // Сме след > operator - трябва да добавим към parent на siblings
-                        // т.е. към предния контекст
-                        const parentContext = stack[stack.length - 2];
-                        if (parentContext && parentContext.parent) {
-                            if (parentContext.parent.length > 0 && parentContext.parent[0].children) {
-                                // parent е nodes - добавяме като деца
-                                const addedNodes = [];
-                                for (const p of parentContext.parent) {
-                                    for (const n of nodes) {
-                                        const clone = this.deepCloneNode(n);
-                                        p.children.push(clone);
-                                        addedNodes.push(clone);
-                                    }
+                        // Сме вътре в > context - context.parent са node-ове
+                        // Добавяме новите елементи като деца на тези node-ове (siblings на предишните)
+                        const addedNodes = [];
+                        for (const p of context.parent) {
+                            for (const n of nodes) {
+                                const clone = this.deepCloneNode(n);
+                                // Прилагаме parent index ако има
+                                if (p._index) {
+                                    clone = this.cloneNodeWithIndex(clone, p._index);
                                 }
-                                // Обновяваме context.parent да сочи към децата на първия parent
-                                // за да може следващият > да работи правилно
-                                if (parentContext.parent[0].children.length > 0) {
-                                    context.parent = [parentContext.parent[0].children[parentContext.parent[0].children.length - 1]];
-                                    context.siblings = context.parent;
-                                }
-                            } else {
-                                // parent е root array
-                                for (const n of nodes) {
-                                    parentContext.parent.push(n);
-                                }
-                                context.siblings = nodes;
+                                p.children.push(clone);
+                                addedNodes.push(clone);
                             }
                         }
+                        context.siblings = addedNodes;
                     }
                 }
                 
@@ -209,20 +201,29 @@ const EmmetParser = {
                 const multiplier = this.parseMultiplier();
                 
                 // Добавяме групата към правилното място
-                // Ако външният контекст е от > operator (има parent с nodes)
-                // добавяме като деца
-                if (outerContext && outerContext.parent && outerContext.parent.length > 0 && outerContext.parent[0].children !== undefined) {
+                // Ако външният контекст НЕ е root (т.е. сме вътре в > context), добавяме като деца
+                if (outerContext && !outerContext._isRoot && outerContext.parent && outerContext.parent.length > 0) {
                     // Групата е дете - добавяме към children на parent nodes
                     for (const p of outerContext.parent) {
                         if (multiplier > 1) {
                             for (let i = 0; i < multiplier; i++) {
                                 for (const node of groupContent) {
-                                    p.children.push(this.cloneNodeWithIndex(this.deepCloneNode(node), i + 1));
+                                    let clone = this.cloneNodeWithIndex(this.deepCloneNode(node), i + 1);
+                                    // Ако parent има _index, заместваме и неговия $
+                                    if (p._index) {
+                                        clone = this.cloneNodeWithIndex(clone, p._index);
+                                    }
+                                    p.children.push(clone);
                                 }
                             }
                         } else {
                             for (const node of groupContent) {
-                                p.children.push(this.deepCloneNode(node));
+                                let clone = this.deepCloneNode(node);
+                                // Ако parent има _index, заместваме $ с неговия индекс
+                                if (p._index) {
+                                    clone = this.cloneNodeWithIndex(clone, p._index);
+                                }
+                                p.children.push(clone);
                             }
                         }
                     }
@@ -231,7 +232,7 @@ const EmmetParser = {
                         context.siblings = outerContext.parent[0].children.slice(-groupContent.length * (multiplier > 1 ? multiplier : 1));
                     }
                 } else if (Array.isArray(context.parent)) {
-                    // Групата е на root level
+                    // Групата е на root level или outerContext е root
                     if (multiplier > 1) {
                         for (let i = 0; i < multiplier; i++) {
                             for (const node of groupContent) {
@@ -581,10 +582,18 @@ const EmmetParser = {
      * Заменя $ с индекс
      */
     replaceIndex(str, index) {
-        // $$$ -> 001, $$ -> 01, $ -> 1
-        return str.replace(/\$+/g, (match) => {
+        // Първо премахваме escape-натите \$ -> временен placeholder
+        let result = str.replace(/\\\$/g, '\x00ESCAPED_DOLLAR\x00');
+        
+        // Заместваме $$$ -> 001, $$ -> 01, $ -> 1
+        result = result.replace(/\$+/g, (match) => {
             return String(index).padStart(match.length, '0');
         });
+        
+        // Връщаме escaped dollars обратно като обикновени $
+        result = result.replace(/\x00ESCAPED_DOLLAR\x00/g, '$');
+        
+        return result;
     },
     
     /**

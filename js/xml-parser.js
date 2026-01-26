@@ -439,6 +439,16 @@ const XmlParser = {
                 results.push(emmet);
             }
             
+            // Ако имаме siblings с деца, трябва да ги обгърнем в скоби
+            // за да се парсва правилно (a>b)+(c>d) вместо a>b+c>d
+            if (results.length > 1) {
+                // Проверяваме дали някой от резултатите има '>' (деца)
+                const needsGrouping = results.some(r => r.includes('>'));
+                if (needsGrouping) {
+                    return results.map(r => r.includes('>') ? '(' + r + ')' : r).join('+');
+                }
+            }
+            
             return results.join('+');
         };
         
@@ -501,3 +511,8 @@ const XmlParser = {
         return stats;
     }
 };
+
+// Export for Node.js testing
+if (typeof module !== 'undefined' && module.exports) {
+    module.exports = XmlParser;
+}
