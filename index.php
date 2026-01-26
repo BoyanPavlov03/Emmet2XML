@@ -87,7 +87,11 @@
                         <div class="editor-panel">
                             <div class="editor-header">
                                 <h3 id="input-label">Emmet Вход</h3>
-                                <button class="btn-small" id="btn-clear-input">Изчисти</button>
+                                <div class="editor-buttons">
+                                    <button class="btn-small" id="btn-format-xml" title="Форматирай XML (Ctrl+Shift+F)" style="display:none;">⚙ Форматирай</button>
+                                    <button class="btn-small" id="btn-apply-all-rules" title="Приложи всички правила" style="display:none;">📐 Правила</button>
+                                    <button class="btn-small" id="btn-clear-input">Изчисти</button>
+                                </div>
                             </div>
                             <textarea id="input-editor" placeholder="Въведи Emmet израз...
 Примери:

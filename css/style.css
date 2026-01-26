@@ -208,6 +208,12 @@ body {
     font-weight: 600;
 }
 
+.editor-buttons {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
 .editor-panel textarea {
     flex: 1;
     border: none;

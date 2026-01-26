@@ -56,6 +56,42 @@ const App = {
                 textarea.value = textarea.value.substring(0, start) + '\t' + textarea.value.substring(end);
                 textarea.selectionStart = textarea.selectionEnd = start + 1;
             }
+            
+            // Auto-indent on Enter for XML mode
+            if (e.key === 'Enter') {
+                const direction = document.getElementById('transform-direction').value;
+                if (direction === 'xml2emmet') {
+                    e.preventDefault();
+                    this.handleXmlAutoIndent(e.target);
+                }
+            }
+            
+            // Format XML with Ctrl+Shift+F
+            if (e.ctrlKey && e.shiftKey && e.key === 'F') {
+                const direction = document.getElementById('transform-direction').value;
+                if (direction === 'xml2emmet') {
+                    e.preventDefault();
+                    this.formatXml();
+                }
+            }
+        });
+        
+        // Click to select XML block
+        document.getElementById('input-editor').addEventListener('click', (e) => {
+            const direction = document.getElementById('transform-direction').value;
+            if (direction === 'xml2emmet') {
+                this.handleXmlBlockSelect(e.target);
+            }
+        });
+        
+        // Format XML button
+        document.getElementById('btn-format-xml')?.addEventListener('click', () => {
+            this.formatXml();
+        });
+        
+        // Apply all rules button
+        document.getElementById('btn-apply-all-rules')?.addEventListener('click', () => {
+            this.applyAllRulesToInput();
         });
         
         // Copy output
@@ -141,13 +177,347 @@ const App = {
         const direction = document.getElementById('transform-direction').value;
         const inputLabel = document.getElementById('input-label');
         const outputLabel = document.getElementById('output-label');
+        const formatBtn = document.getElementById('btn-format-xml');
+        const applyRulesBtn = document.getElementById('btn-apply-all-rules');
         
         if (direction === 'emmet2xml') {
             inputLabel.textContent = 'Emmet Вход';
             outputLabel.textContent = 'XML Изход';
+            if (formatBtn) formatBtn.style.display = 'none';
+            if (applyRulesBtn) applyRulesBtn.style.display = 'none';
         } else {
             inputLabel.textContent = 'XML Вход';
             outputLabel.textContent = 'Emmet Изход';
+            if (formatBtn) formatBtn.style.display = 'inline-block';
+            if (applyRulesBtn) applyRulesBtn.style.display = 'inline-block';
+        }
+    },
+    
+    /**
+     * Обработва автоматична идентация при Enter в XML режим
+     */
+    handleXmlAutoIndent(textarea) {
+        const value = textarea.value;
+        const start = textarea.selectionStart;
+        const end = textarea.selectionEnd;
+        
+        // Намираме текущия ред
+        const beforeCursor = value.substring(0, start);
+        const afterCursor = value.substring(end);
+        
+        // Вземаме текущия ред
+        const lastNewline = beforeCursor.lastIndexOf('\n');
+        const currentLine = beforeCursor.substring(lastNewline + 1);
+        
+        // Изчисляваме базовата идентация (whitespace в началото на текущия ред)
+        const baseIndentMatch = currentLine.match(/^(\s*)/);
+        const baseIndent = baseIndentMatch ? baseIndentMatch[1] : '';
+        
+        // Вземаме настройката за идентация
+        const indentUnit = this.getSettings().indent;
+        
+        // Проверяваме дали курсорът е между отварящ и затварящ таг: <tag>|</tag>
+        const beforeTag = beforeCursor.match(/<([a-zA-Z][a-zA-Z0-9-_]*)[^>]*>\s*$/);
+        const afterTag = afterCursor.match(/^\s*<\/([a-zA-Z][a-zA-Z0-9-_]*)>/);
+        
+        let newText;
+        let cursorPos;
+        
+        if (beforeTag && afterTag && beforeTag[1] === afterTag[1]) {
+            // Курсорът е между отварящ и затварящ таг
+            // Добавяме два нови реда - един с по-голяма идентация за съдържанието,
+            // и един със същата идентация за затварящия таг
+            const contentIndent = baseIndent + indentUnit;
+            newText = '\n' + contentIndent + '\n' + baseIndent;
+            cursorPos = start + 1 + contentIndent.length; // Поставяме курсора на средния ред
+        } else if (beforeCursor.match(/<([a-zA-Z][a-zA-Z0-9-_]*)[^>]*>\s*$/)) {
+            // След отварящ таг - добавяме по-голяма идентация
+            const newIndent = baseIndent + indentUnit;
+            newText = '\n' + newIndent;
+            cursorPos = start + 1 + newIndent.length;
+        } else if (beforeCursor.match(/<\/[a-zA-Z][a-zA-Z0-9-_]*>\s*$/)) {
+            // След затварящ таг - запазваме текущата идентация
+            newText = '\n' + baseIndent;
+            cursorPos = start + 1 + baseIndent.length;
+        } else {
+            // Нормален случай - запазваме текущата идентация
+            newText = '\n' + baseIndent;
+            cursorPos = start + 1 + baseIndent.length;
+        }
+        
+        // Вмъкваме новия текст
+        textarea.value = beforeCursor + newText + afterCursor;
+        textarea.selectionStart = textarea.selectionEnd = cursorPos;
+    },
+    
+    /**
+     * Форматира XML кода с правилна идентация
+     */
+    formatXml() {
+        const textarea = document.getElementById('input-editor');
+        const xml = textarea.value.trim();
+        
+        if (!xml) return;
+        
+        try {
+            const indent = this.getSettings().indent;
+            let formatted = '';
+            let level = 0;
+            
+            // Премахваме празни редове и нормализираме
+            const normalized = xml
+                .replace(/>\s+</g, '><')  // Премахваме whitespace между тагове
+                .replace(/\s+/g, ' ')      // Нормализираме whitespace
+                .trim();
+            
+            // Разделяме на тагове и текст
+            const tokens = normalized.match(/<[^>]+>|[^<]+/g) || [];
+            
+            for (let i = 0; i < tokens.length; i++) {
+                const token = tokens[i].trim();
+                if (!token) continue;
+                
+                if (token.startsWith('</')) {
+                    // Затварящ таг - намаляваме нивото преди
+                    level--;
+                    formatted += indent.repeat(Math.max(0, level)) + token + '\n';
+                } else if (token.startsWith('<') && token.endsWith('/>')) {
+                    // Self-closing таг
+                    formatted += indent.repeat(level) + token + '\n';
+                } else if (token.startsWith('<?') || token.startsWith('<!')) {
+                    // XML declaration или коментар
+                    formatted += token + '\n';
+                } else if (token.startsWith('<')) {
+                    // Отварящ таг
+                    const tagName = token.match(/<([a-zA-Z][a-zA-Z0-9-_]*)/)?.[1];
+                    formatted += indent.repeat(level) + token;
+                    
+                    // Проверяваме дали следващият токен е текст и след него има затварящ таг за същия елемент
+                    const nextToken = tokens[i + 1]?.trim();
+                    const afterNext = tokens[i + 2]?.trim();
+                    
+                    if (nextToken && !nextToken.startsWith('<') && 
+                        afterNext && afterNext === `</${tagName}>`) {
+                        // Inline елемент с текст: <tag>text</tag>
+                        formatted += nextToken + afterNext + '\n';
+                        i += 2; // Пропускаме текста и затварящия таг
+                    } else {
+                        formatted += '\n';
+                        level++;
+                    }
+                } else {
+                    // Текстов възел (самостоятелен)
+                    formatted += indent.repeat(level) + token + '\n';
+                }
+            }
+            
+            textarea.value = formatted.trim();
+        } catch (error) {
+            console.error('Format error:', error);
+            alert('Грешка при форматиране: ' + error.message);
+        }
+    },
+    
+    /**
+     * Селектира XML блок при клик върху таг
+     */
+    handleXmlBlockSelect(textarea) {
+        const value = textarea.value;
+        const cursorPos = textarea.selectionStart;
+        
+        // Намираме таг около курсора
+        // Първо търсим назад за начало на таг
+        let tagStart = -1;
+        let tagEnd = -1;
+        
+        // Търсим '<' преди курсора
+        for (let i = cursorPos; i >= 0; i--) {
+            if (value[i] === '<') {
+                tagStart = i;
+                break;
+            }
+            if (value[i] === '>') {
+                // Курсорът не е върху таг
+                break;
+            }
+        }
+        
+        if (tagStart === -1) return;
+        
+        // Търсим '>' след tagStart
+        for (let i = tagStart; i < value.length; i++) {
+            if (value[i] === '>') {
+                tagEnd = i + 1;
+                break;
+            }
+        }
+        
+        if (tagEnd === -1) return;
+        
+        const tagContent = value.substring(tagStart, tagEnd);
+        
+        // Проверяваме дали е затварящ таг
+        if (tagContent.startsWith('</')) {
+            // Намираме съответстващия отварящ таг
+            const tagName = tagContent.match(/<\/([a-zA-Z][a-zA-Z0-9-_]*)/)?.[1];
+            if (!tagName) return;
+            
+            const openingTagStart = this.findMatchingOpeningTag(value, tagStart, tagName);
+            if (openingTagStart !== -1) {
+                textarea.selectionStart = openingTagStart;
+                textarea.selectionEnd = tagEnd;
+            }
+        } else if (tagContent.endsWith('/>')) {
+            // Self-closing - селектираме само този таг
+            textarea.selectionStart = tagStart;
+            textarea.selectionEnd = tagEnd;
+        } else {
+            // Отварящ таг - намираме затварящия
+            const tagName = tagContent.match(/<([a-zA-Z][a-zA-Z0-9-_]*)/)?.[1];
+            if (!tagName) return;
+            
+            const closingTagEnd = this.findMatchingClosingTag(value, tagEnd, tagName);
+            if (closingTagEnd !== -1) {
+                textarea.selectionStart = tagStart;
+                textarea.selectionEnd = closingTagEnd;
+            }
+        }
+    },
+    
+    /**
+     * Намира съответстващия отварящ таг
+     */
+    findMatchingOpeningTag(text, fromPos, tagName) {
+        let depth = 1;
+        const openPattern = new RegExp(`<${tagName}(?:\\s|>|/>)`, 'g');
+        const closePattern = new RegExp(`</${tagName}>`, 'g');
+        
+        // Събираме всички отварящи и затварящи тагове преди fromPos
+        const beforeText = text.substring(0, fromPos);
+        const tags = [];
+        
+        let match;
+        openPattern.lastIndex = 0;
+        while ((match = openPattern.exec(beforeText)) !== null) {
+            const isSelfClosing = text.substring(match.index, text.indexOf('>', match.index) + 1).endsWith('/>');
+            if (!isSelfClosing) {
+                tags.push({ pos: match.index, type: 'open' });
+            }
+        }
+        
+        closePattern.lastIndex = 0;
+        while ((match = closePattern.exec(beforeText)) !== null) {
+            tags.push({ pos: match.index, type: 'close' });
+        }
+        
+        // Сортираме по позиция в обратен ред
+        tags.sort((a, b) => b.pos - a.pos);
+        
+        // Търсим съответстващия отварящ таг
+        let closeCount = 0;
+        for (const tag of tags) {
+            if (tag.type === 'close') {
+                closeCount++;
+            } else {
+                if (closeCount === 0) {
+                    return tag.pos;
+                }
+                closeCount--;
+            }
+        }
+        
+        return -1;
+    },
+    
+    /**
+     * Намира съответстващия затварящ таг
+     */
+    findMatchingClosingTag(text, fromPos, tagName) {
+        let depth = 1;
+        const afterText = text.substring(fromPos);
+        
+        const regex = new RegExp(`<${tagName}(?:\\s[^>]*)?(?:>|/>)|</${tagName}>`, 'g');
+        
+        let match;
+        while ((match = regex.exec(afterText)) !== null) {
+            const fullMatch = match[0];
+            
+            if (fullMatch.startsWith(`</${tagName}`)) {
+                depth--;
+                if (depth === 0) {
+                    return fromPos + match.index + fullMatch.length;
+                }
+            } else if (!fullMatch.endsWith('/>')) {
+                depth++;
+            }
+        }
+        
+        return -1;
+    },
+    
+    /**
+     * Прилага всички запазени правила върху маркирания XML блок
+     */
+    async applyAllRulesToInput() {
+        const textarea = document.getElementById('input-editor');
+        const fullText = textarea.value;
+        const selStart = textarea.selectionStart;
+        const selEnd = textarea.selectionEnd;
+        
+        // Проверяваме дали има селекция
+        if (selStart === selEnd) {
+            alert('Моля, маркирай XML блок върху който да се приложат правилата.\n\nСъвет: Кликни върху таг за да селектираш целия блок.');
+            return;
+        }
+        
+        const selectedXml = fullText.substring(selStart, selEnd).trim();
+        
+        if (!selectedXml) {
+            alert('Моля, маркирай XML блок.');
+            return;
+        }
+        
+        try {
+            // Зареждаме правилата от сървъра
+            const response = await fetch('php/rules.php?action=list');
+            const data = await response.json();
+            
+            if (!data.success || !data.items || data.items.length === 0) {
+                alert('Няма запазени правила за прилагане.');
+                return;
+            }
+            
+            let result = selectedXml;
+            let appliedCount = 0;
+            
+            // Прилагаме всяко правило последователно
+            for (const rule of data.items) {
+                const transformed = Transformer.applyRule(result, rule.pattern, rule.replacement);
+                if (transformed.success && transformed.result !== result) {
+                    result = transformed.result;
+                    appliedCount++;
+                }
+            }
+            
+            if (appliedCount > 0) {
+                // Заменяме само селектираната част
+                const beforeSelection = fullText.substring(0, selStart);
+                const afterSelection = fullText.substring(selEnd);
+                textarea.value = beforeSelection + result + afterSelection;
+                
+                // Възстановяваме селекцията върху трансформирания блок
+                textarea.selectionStart = selStart;
+                textarea.selectionEnd = selStart + result.length;
+                textarea.focus();
+                
+                alert(`Успешно приложени ${appliedCount} правила върху маркирания блок.`);
+            } else {
+                alert('Няма съвпадения с правилата в маркирания блок.');
+            }
+            
+        } catch (error) {
+            console.error('Apply rules error:', error);
+            alert('Грешка при прилагане на правила: ' + error.message);
         }
     },
     
