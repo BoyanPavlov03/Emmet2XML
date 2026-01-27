@@ -1169,54 +1169,45 @@ const App = {
      * Извлича данни от традиционна HTML/XML таблица
      */
     extractFromTable(root) {
-        let table = root.querySelector('table') || root;
-        const rows = table.querySelectorAll('tr, row');
+        // 1. Locate the table structure
+        const table = root.querySelector('table') || root;
+        const rows = Array.from(table.querySelectorAll('tr, row'));
+
+        // Validation: Need at least one row to define structure
+        if (rows.length === 0) return { success: false };
+
+        // 2. Extract Headers from the very first row
+        const firstRowCells = Array.from(rows[0].querySelectorAll('th, td, cell'));
         
-        if (rows.length === 0) {
-            return { success: false };
-        }
-        
-        let headers = [];
+        // If the first row is empty, we can't determine the structure
+        if (firstRowCells.length === 0) return { success: false };
+
+        const headers = firstRowCells.map((cell, i) => {
+            const text = cell.textContent.trim();
+            // Fallback to "Колона X" only if the cell is actually empty
+            return text || `Колона ${i + 1}`;
+        });
+
+        // 3. Extract Data starting from the second row (index 1)
         const data = [];
-        
-        rows.forEach((row, rowIndex) => {
-            const cells = row.querySelectorAll('th, td, cell');
-            const rowData = [];
+        for (let i = 1; i < rows.length; i++) {
+            const cells = Array.from(rows[i].querySelectorAll('th, td, cell'));
+            const rowData = cells.map(cell => cell.textContent.trim());
             
-            cells.forEach((cell, cellIndex) => {
-                const text = cell.textContent.trim();
-                
-                if (rowIndex === 0 && (cell.tagName.toLowerCase() === 'th' || headers.length === 0)) {
-                    if (cell.tagName.toLowerCase() === 'th') {
-                        headers.push(text);
-                    } else if (rowIndex === 0) {
-                        headers.push(text || `Колона ${cellIndex + 1}`);
-                    }
-                }
-                rowData.push(text);
-            });
-            
-            const firstRowCells = rows[0].querySelectorAll('th');
-            if (firstRowCells.length > 0 && rowIndex === 0) {
-                return;
-            }
-            
+            // Only push if the row actually contains data
             if (rowData.length > 0) {
                 data.push(rowData);
             }
-        });
-        
-        if (headers.length === 0 && data.length > 0) {
-            headers = data[0].map((_, i) => `Колона ${i + 1}`);
         }
-        
+
+        // Success check: Do we have headers and at least one row of data?
+        // Note: If you want to allow empty tables with just headers, remove 'data.length === 0'
         if (data.length === 0) {
-            return { success: false };
+            return { success: true, headers, data: [] }; 
         }
-        
+
         return { success: true, headers, data };
-    },
-    
+    }, 
     /**
      * Извлича данни от списъци (ul, ol, li)
      */
