@@ -1146,23 +1146,110 @@ const App = {
             
             const root = doc.documentElement;
             
-            // 1. Try traditional table
+            // 1. Try schema-based table (columns/rows/cell)
+            const schemaResult = this.extractFromSchemaTable(root);
+            if (schemaResult.success) return schemaResult;
+            
+            // 2. Try traditional table
             const tableResult = this.extractFromTable(root);
             if (tableResult.success) return tableResult;
             
-            // 2. Try lists (ul, ol, li)
+            // 3. Try lists (ul, ol, li)
             const listResult = this.extractFromList(root);
             if (listResult.success) return listResult;
             
-            // 3. Try structured data (list/item, items/item, etc.)
+            // 4. Try structured data (list/item, items/item, etc.)
             const structuredResult = this.extractFromStructured(root);
             if (structuredResult.success) return structuredResult;
             
-            return { success: false, error: 'Не е намерена таблица, списък или структурирани данни.\nПоддържани формати:\n- <table> с <tr>/<td>\n- <ul>/<ol> с <li>\n- Структурирани данни като <list>/<item> или <items>/<item>' };
+            return { success: false, error: 'Не е намерена таблица, списък или структурирани данни.\nПоддържани формати:\n- <table> със schema (<columns>/<rows>/<cell>)\n- <table> с <tr>/<td>\n- <ul>/<ol> с <li>\n- Структурирани данни като <list>/<item> или <items>/<item>' };
             
         } catch (error) {
             return { success: false, error: 'Грешка при парсване: ' + error.message };
         }
+    },
+    
+    /**
+     * Извлича данни от schema-based XML таблица (columns/rows/cell)
+     */
+    extractFromSchemaTable(root) {
+        // Find table element or use root
+        const table = root.tagName.toLowerCase() === 'table' ? root : root.querySelector('table');
+        if (!table) return { success: false };
+        
+        // Look for columns definition
+        const columnsEl = table.querySelector('columns');
+        const rowsEl = table.querySelector('rows');
+        
+        if (!columnsEl && !rowsEl) return { success: false };
+        
+        // Extract headers from column definitions
+        let headers = [];
+        let columnMap = {}; // Map column id to index
+        
+        if (columnsEl) {
+            const columnEls = columnsEl.querySelectorAll('column');
+            columnEls.forEach((col, idx) => {
+                const colId = col.getAttribute('id') || col.getAttribute('name') || col.textContent.trim();
+                const colName = col.getAttribute('name') || col.getAttribute('id') || col.textContent.trim() || `Колона ${idx + 1}`;
+                headers.push(colName.charAt(0).toUpperCase() + colName.slice(1));
+                columnMap[colId] = idx;
+            });
+        }
+        
+        // Extract data from rows
+        const data = [];
+        const rowEls = rowsEl ? rowsEl.querySelectorAll('row') : table.querySelectorAll('row');
+        
+        if (rowEls.length === 0) return { success: false };
+        
+        // If no columns definition, extract headers from first row's cells
+        if (headers.length === 0) {
+            const firstRowCells = rowEls[0].querySelectorAll('cell');
+            firstRowCells.forEach((cell, idx) => {
+                const colAttr = cell.getAttribute('column') || cell.getAttribute('col') || cell.getAttribute('id');
+                if (colAttr && !columnMap[colAttr]) {
+                    headers.push(colAttr.charAt(0).toUpperCase() + colAttr.slice(1));
+                    columnMap[colAttr] = idx;
+                }
+            });
+            // Fallback to generic column names
+            if (headers.length === 0) {
+                const numCells = firstRowCells.length;
+                for (let i = 0; i < numCells; i++) {
+                    headers.push(`Колона ${i + 1}`);
+                }
+            }
+        }
+        
+        // Parse each row
+        rowEls.forEach(rowEl => {
+            const cells = rowEl.querySelectorAll('cell');
+            const rowData = new Array(headers.length).fill('');
+            
+            cells.forEach(cell => {
+                const colAttr = cell.getAttribute('column') || cell.getAttribute('col') || cell.getAttribute('id');
+                const value = cell.textContent.trim();
+                
+                if (colAttr && columnMap.hasOwnProperty(colAttr)) {
+                    rowData[columnMap[colAttr]] = value;
+                } else {
+                    // If no column attribute, try to find by index
+                    const cellIndex = Array.from(cells).indexOf(cell);
+                    if (cellIndex < rowData.length) {
+                        rowData[cellIndex] = value;
+                    }
+                }
+            });
+            
+            data.push(rowData);
+        });
+        
+        if (headers.length === 0 || data.length === 0) {
+            return { success: false };
+        }
+        
+        return { success: true, headers, data };
     },
     
     /**
@@ -1364,7 +1451,7 @@ const App = {
     },
     
     /**
-     * Показва преглед на цялата таблица
+     * Показва преглед на цялата таблица с възможност за редактиране
      */
     showTablePreview() {
         const resultsContent = document.getElementById('analysis-results-content');
@@ -1374,23 +1461,302 @@ const App = {
             return;
         }
         
-        let html = '<table class="results-table"><thead><tr>';
-        html += '<th>#</th>';
-        this.tableHeaders.forEach(h => {
-            html += `<th>${this.escapeHtml(h)}</th>`;
+        let html = '<div class="editable-table-container">';
+        html += '<div class="table-controls">';
+        html += '<button class="btn-small btn-add" id="btn-add-column" title="Добави колона">➕ Колона</button>';
+        html += '<button class="btn-small btn-add" id="btn-add-row" title="Добави ред">➕ Ред</button>';
+        html += '<span class="control-separator"></span>';
+        html += '<button class="btn-small btn-export" id="btn-export-xml" title="Експортирай в стандартен XML (table/tr/td)">📄 XML</button>';
+        html += '<button class="btn-small btn-export" id="btn-export-schema-xml" title="Експортирай в schema XML (columns/rows/cell)">📋 Schema XML</button>';
+        html += '<button class="btn-small btn-export" id="btn-export-emmet" title="Експортирай в Emmet">⚡ Emmet</button>';
+        html += '</div>';
+        
+        html += '<table class="editable-table" id="analysis-editable-table"><thead><tr>';
+        html += '<th class="row-number-header">#</th>';
+        this.tableHeaders.forEach((h, colIdx) => {
+            html += `<th class="editable-header" data-col="${colIdx}">
+                        <input type="text" value="${this.escapeHtml(h)}" class="header-input" data-col="${colIdx}">
+                        <button class="btn-delete-col" data-col="${colIdx}" title="Изтрий колона">✕</button>
+                    </th>`;
         });
         html += '</tr></thead><tbody>';
         
-        this.tableData.forEach((row, idx) => {
-            html += `<tr><td>${idx + 1}</td>`;
-            row.forEach(cell => {
-                html += `<td>${this.escapeHtml(cell)}</td>`;
+        this.tableData.forEach((row, rowIdx) => {
+            html += `<tr data-row="${rowIdx}">`;
+            html += `<td class="row-number"><span>${rowIdx + 1}</span><button class="btn-delete-row" data-row="${rowIdx}" title="Изтрий ред">✕</button></td>`;
+            row.forEach((cell, colIdx) => {
+                html += `<td class="editable-cell" data-row="${rowIdx}" data-col="${colIdx}">
+                            <input type="text" value="${this.escapeHtml(cell)}" class="cell-input" data-row="${rowIdx}" data-col="${colIdx}">
+                        </td>`;
             });
             html += '</tr>';
         });
         
         html += '</tbody></table>';
+        html += '</div>';
+        
         resultsContent.innerHTML = html;
+        
+        // Bind event listeners for editable table
+        this.bindEditableTableEvents();
+    },
+    
+    /**
+     * Свързва събития за редактиране на таблица
+     */
+    bindEditableTableEvents() {
+        const container = document.querySelector('.editable-table-container');
+        if (!container) return;
+        
+        // Update headers when changed
+        container.querySelectorAll('.header-input').forEach(input => {
+            input.addEventListener('change', (e) => {
+                const colIdx = parseInt(e.target.dataset.col);
+                this.tableHeaders[colIdx] = e.target.value;
+            });
+        });
+        
+        // Update cells when changed
+        container.querySelectorAll('.cell-input').forEach(input => {
+            input.addEventListener('change', (e) => {
+                const rowIdx = parseInt(e.target.dataset.row);
+                const colIdx = parseInt(e.target.dataset.col);
+                if (this.tableData[rowIdx]) {
+                    this.tableData[rowIdx][colIdx] = e.target.value;
+                }
+            });
+        });
+        
+        // Add column button
+        document.getElementById('btn-add-column')?.addEventListener('click', () => {
+            this.addColumn();
+        });
+        
+        // Add row button
+        document.getElementById('btn-add-row')?.addEventListener('click', () => {
+            this.addRow();
+        });
+        
+        // Delete column buttons
+        container.querySelectorAll('.btn-delete-col').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                const colIdx = parseInt(btn.dataset.col);
+                this.deleteColumn(colIdx);
+            });
+        });
+        
+        // Delete row buttons
+        container.querySelectorAll('.btn-delete-row').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                const rowIdx = parseInt(btn.dataset.row);
+                this.deleteRow(rowIdx);
+            });
+        });
+        
+        // Export buttons
+        document.getElementById('btn-export-xml')?.addEventListener('click', () => {
+            this.exportTableToXML();
+        });
+        
+        document.getElementById('btn-export-schema-xml')?.addEventListener('click', () => {
+            this.exportTableToSchemaXML();
+        });
+        
+        document.getElementById('btn-export-emmet')?.addEventListener('click', () => {
+            this.exportTableToEmmet();
+        });
+    },
+    
+    /**
+     * Добавя нова колона
+     */
+    addColumn() {
+        const newHeaderName = `Колона ${this.tableHeaders.length + 1}`;
+        this.tableHeaders.push(newHeaderName);
+        
+        // Add empty cells to existing rows
+        this.tableData.forEach(row => {
+            row.push('');
+        });
+        
+        this.showTablePreview();
+    },
+    
+    /**
+     * Добавя нов ред
+     */
+    addRow() {
+        const newRow = new Array(this.tableHeaders.length).fill('');
+        this.tableData.push(newRow);
+        this.showTablePreview();
+    },
+    
+    /**
+     * Изтрива колона по индекс
+     */
+    deleteColumn(colIdx) {
+        if (this.tableHeaders.length <= 1) {
+            alert('Не можеш да изтриеш последната колона!');
+            return;
+        }
+        
+        if (confirm(`Сигурен ли си че искаш да изтриеш колоната "${this.escapeHtml(this.tableHeaders[colIdx])}"?`)) {
+            this.tableHeaders.splice(colIdx, 1);
+            this.tableData.forEach(row => {
+                row.splice(colIdx, 1);
+            });
+            this.showTablePreview();
+        }
+    },
+    
+    /**
+     * Изтрива ред по индекс
+     */
+    deleteRow(rowIdx) {
+        if (confirm(`Сигурен ли си че искаш да изтриеш ред ${rowIdx + 1}?`)) {
+            this.tableData.splice(rowIdx, 1);
+            this.showTablePreview();
+        }
+    },
+    
+    /**
+     * Експортира таблицата обратно в XML
+     */
+    exportTableToXML() {
+        let xml = '<table>\n  <tr>\n';
+        
+        // Add headers
+        this.tableHeaders.forEach(header => {
+            xml += `    <th>${this.escapeXmlSpecialChars(header)}</th>\n`;
+        });
+        xml += '  </tr>\n';
+        
+        // Add data rows
+        this.tableData.forEach(row => {
+            xml += '  <tr>\n';
+            row.forEach(cell => {
+                xml += `    <td>${this.escapeXmlSpecialChars(cell)}</td>\n`;
+            });
+            xml += '  </tr>\n';
+        });
+        
+        xml += '</table>';
+        
+        // Put in analysis input and output editor
+        const analysisInput = document.getElementById('analysis-input');
+        const outputEditor = document.getElementById('output-editor');
+        if (analysisInput) {
+            analysisInput.value = xml;
+        }
+        if (outputEditor) {
+            outputEditor.value = xml;
+            // Switch to transform tab to show result
+            this.switchTab('transform');
+            outputEditor.scrollIntoView({ behavior: 'smooth' });
+        }
+    },
+    
+    /**
+     * Експортира таблицата в schema-based XML формат
+     */
+    exportTableToSchemaXML() {
+        const tableName = 'data';
+        let xml = `<table name="${tableName}">\n`;
+        
+        // Add columns definition
+        xml += '  <columns>\n';
+        this.tableHeaders.forEach(header => {
+            const colId = header.toLowerCase().replace(/\s+/g, '_');
+            xml += `    <column id="${this.escapeXmlSpecialChars(colId)}" type="string"/>\n`;
+        });
+        xml += '  </columns>\n\n';
+        
+        // Add rows
+        xml += '  <rows>\n';
+        this.tableData.forEach(row => {
+            xml += '    <row>\n';
+            row.forEach((cell, idx) => {
+                const colId = this.tableHeaders[idx].toLowerCase().replace(/\s+/g, '_');
+                xml += `      <cell column="${this.escapeXmlSpecialChars(colId)}">${this.escapeXmlSpecialChars(cell)}</cell>\n`;
+            });
+            xml += '    </row>\n';
+        });
+        xml += '  </rows>\n';
+        xml += '</table>';
+        
+        // Put in analysis input and output editor
+        const analysisInput = document.getElementById('analysis-input');
+        const outputEditor = document.getElementById('output-editor');
+        if (analysisInput) {
+            analysisInput.value = xml;
+        }
+        if (outputEditor) {
+            outputEditor.value = xml;
+            // Switch to transform tab to show result
+            this.switchTab('transform');
+            outputEditor.scrollIntoView({ behavior: 'smooth' });
+        }
+    },
+    
+    /**
+     * Експортира таблицата обратно в Emmet формат
+     */
+    exportTableToEmmet() {
+        let emmet = 'table>tr>';
+        
+        // Add headers
+        const headerParts = this.tableHeaders.map(h => `th{${this.escapeEmmetSpecialChars(h)}}`).join('+');
+        emmet += headerParts;
+        
+        // Add rows
+        this.tableData.forEach(row => {
+            emmet += '^tr>';
+            const cellParts = row.map(cell => `td{${this.escapeEmmetSpecialChars(cell)}}`).join('+');
+            emmet += cellParts;
+        });
+        
+        // Put in analysis input and input editor
+        const analysisInput = document.getElementById('analysis-input');
+        const inputEditor = document.getElementById('input-editor');
+        if (analysisInput) {
+            // Set format to emmet
+            document.getElementById('analysis-format').value = 'emmet';
+            analysisInput.value = emmet;
+        }
+        if (inputEditor) {
+            inputEditor.value = emmet;
+            // Switch to transform tab to show result
+            this.switchTab('transform');
+            inputEditor.scrollIntoView({ behavior: 'smooth' });
+        }
+    },
+    
+    /**
+     * Екранира специални символи за XML
+     */
+    escapeXmlSpecialChars(str) {
+        if (!str) return '';
+        return str
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&apos;');
+    },
+    
+    /**
+     * Екранира специални символи за Emmet
+     */
+    escapeEmmetSpecialChars(str) {
+        if (!str) return '';
+        return str
+            .replace(/[{}]/g, '')  // Remove braces
+            .replace(/[+>^]/g, ' ') // Replace operators with space
+            .trim();
     },
     
     /**
@@ -1421,14 +1787,21 @@ const App = {
         const numericValues = columnValues.filter(v => !isNaN(parseFloat(v)) && isFinite(v)).map(parseFloat);
         const isNumeric = numericValues.length > columnValues.length / 2;
         
-        let html = `<h4>Колона: ${this.escapeHtml(columnName)}</h4>`;
-        html += '<table class="results-table"><thead><tr><th>#</th><th>Стойност</th></tr></thead><tbody>';
+        let html = '<div class="filtered-column-view">';
+        html += `<h4>Колона: ${this.escapeHtml(columnName)}</h4>`;
+        html += '<div class="column-view-content">';
+        html += '<table class="results-table filtered-table"><thead><tr><th>#</th><th>Стойност</th><th>Действие</th></tr></thead><tbody>';
         
         columnValues.forEach((value, idx) => {
-            html += `<tr><td>${idx + 1}</td><td>${this.escapeHtml(value)}</td></tr>`;
+            html += `<tr data-col="${colIdx}" data-row="${idx}">
+                        <td>${idx + 1}</td>
+                        <td><input type="text" value="${this.escapeHtml(value)}" class="filtered-cell-input" data-row="${idx}" data-col="${colIdx}" style="width:100%;"></td>
+                        <td><button class="btn-delete-filtered-row" data-row="${idx}" data-col="${colIdx}" title="Изтрий">✕</button></td>
+                    </tr>`;
         });
         
         html += '</tbody></table>';
+        html += '</div>';
         
         // Summary section
         html += '<div class="analysis-summary"><h4>Статистика</h4>';
@@ -1453,8 +1826,40 @@ const App = {
         }
         
         html += '</div>';
+        html += '<button class="btn-primary" id="btn-back-to-full-table" style="margin-top: 10px;">← Назад към цялата таблица</button>';
+        html += '</div>';
         
         resultsContent.innerHTML = html;
+        
+        // Bind events for filtered column view
+        const container = resultsContent.querySelector('.filtered-column-view');
+        
+        // Update cells when changed
+        container.querySelectorAll('.filtered-cell-input').forEach(input => {
+            input.addEventListener('change', (e) => {
+                const rowIdx = parseInt(e.target.dataset.row);
+                const colIdx = parseInt(e.target.dataset.col);
+                if (this.tableData[rowIdx]) {
+                    this.tableData[rowIdx][colIdx] = e.target.value;
+                }
+            });
+        });
+        
+        // Delete row buttons in filtered view
+        container.querySelectorAll('.btn-delete-filtered-row').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                const rowIdx = parseInt(btn.dataset.row);
+                this.deleteRow(rowIdx);
+            });
+        });
+        
+        // Back button
+        document.getElementById('btn-back-to-full-table')?.addEventListener('click', () => {
+            columnSelect.value = '';
+            this.showTablePreview();
+        });
     },
     
     /**

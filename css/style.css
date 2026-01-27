@@ -906,3 +906,280 @@ body {
         font-size: 0.85rem;
     }
 }
+
+/* Editable Table Styles */
+.editable-table-container {
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+    margin-top: 15px;
+}
+
+.table-controls {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    padding: 10px;
+    background-color: var(--light-color);
+    border-radius: var(--radius);
+    border: 1px solid var(--border-color);
+    align-items: center;
+}
+
+.control-separator {
+    width: 1px;
+    height: 24px;
+    background-color: var(--border-color);
+    margin: 0 4px;
+}
+
+.btn-add {
+    background-color: var(--success-color) !important;
+}
+
+.btn-add:hover {
+    background-color: #218838 !important;
+}
+
+.btn-export {
+    background-color: var(--primary-color) !important;
+}
+
+.btn-export:hover {
+    background-color: var(--primary-hover) !important;
+}
+
+.editable-table {
+    width: 100%;
+    border-collapse: collapse;
+    border: 1px solid var(--border-color);
+    background: white;
+    font-size: 0.9rem;
+}
+
+.editable-table thead {
+    background-color: #f5f5f5;
+}
+
+.editable-table th {
+    padding: 8px;
+    text-align: left;
+    border: 1px solid var(--border-color);
+    font-weight: 600;
+    position: relative;
+}
+
+.row-number-header {
+    width: 50px;
+    text-align: center;
+}
+
+.editable-header {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 0 !important;
+}
+
+.header-input {
+    flex: 1;
+    padding: 8px;
+    border: none;
+    background: transparent;
+    font-weight: 600;
+    font-size: inherit;
+}
+
+.header-input:focus {
+    outline: none;
+    background-color: rgba(74, 144, 217, 0.1);
+}
+
+.btn-delete-col {
+    padding: 4px 6px;
+    background: transparent;
+    border: none;
+    color: var(--danger-color);
+    cursor: pointer;
+    font-size: 1.2rem;
+    line-height: 1;
+    visibility: hidden;
+}
+
+.editable-header:hover .btn-delete-col {
+    visibility: visible;
+}
+
+.btn-delete-col:hover {
+    background-color: rgba(220, 53, 69, 0.1);
+    border-radius: 3px;
+}
+
+.editable-table td {
+    padding: 8px;
+    border: 1px solid var(--border-color);
+}
+
+.row-number {
+    background-color: #f9f9f9;
+    text-align: center;
+    font-weight: 600;
+    color: var(--text-muted);
+    width: 50px;
+    position: relative;
+    padding: 0 !important;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+}
+
+.row-number span {
+    flex: 1;
+    padding: 8px;
+}
+
+.btn-delete-row {
+    padding: 4px 6px;
+    background: transparent;
+    border: none;
+    color: var(--danger-color);
+    cursor: pointer;
+    font-size: 1rem;
+    line-height: 1;
+    visibility: hidden;
+    border-radius: 3px;
+}
+
+.editable-table tbody tr:hover .btn-delete-row {
+    visibility: visible;
+}
+
+.btn-delete-row:hover {
+    background-color: rgba(220, 53, 69, 0.15);
+}
+
+.editable-cell {
+    padding: 0 !important;
+}
+
+.cell-input,
+.filtered-cell-input {
+    width: 100%;
+    padding: 8px;
+    border: none;
+    background: transparent;
+    font-size: inherit;
+    font-family: inherit;
+}
+
+.cell-input:focus,
+.filtered-cell-input:focus {
+    outline: none;
+    background-color: rgba(74, 144, 217, 0.1);
+    border-radius: 3px;
+}
+
+.editable-table tbody tr:hover {
+    background-color: rgba(74, 144, 217, 0.05);
+}
+
+/* Filtered Column View */
+.filtered-column-view {
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+}
+
+.column-view-content {
+    flex: 1;
+    overflow-x: auto;
+}
+
+.filtered-table {
+    width: 100%;
+    border-collapse: collapse;
+    border: 1px solid var(--border-color);
+}
+
+.filtered-table thead {
+    background-color: #f5f5f5;
+}
+
+.filtered-table th,
+.filtered-table td {
+    padding: 8px;
+    border: 1px solid var(--border-color);
+    text-align: left;
+}
+
+.filtered-table th {
+    font-weight: 600;
+    background-color: #f9f9f9;
+}
+
+.filtered-table tbody tr:hover {
+    background-color: rgba(74, 144, 217, 0.05);
+}
+
+.btn-delete-filtered-row {
+    padding: 4px 8px;
+    background: transparent;
+    border: 1px solid var(--danger-color);
+    color: var(--danger-color);
+    cursor: pointer;
+    border-radius: 3px;
+    font-size: 0.9rem;
+    transition: all 0.2s;
+}
+
+.btn-delete-filtered-row:hover {
+    background-color: var(--danger-color);
+    color: white;
+}
+
+/* Button styles for small buttons */
+.btn-small {
+    padding: 6px 12px;
+    background-color: var(--secondary-color);
+    color: white;
+    border: none;
+    border-radius: var(--radius);
+    cursor: pointer;
+    font-size: 0.85rem;
+    transition: all 0.2s;
+}
+
+.btn-small:hover {
+    background-color: #5a6268;
+    transform: translateY(-1px);
+}
+
+.btn-small:active {
+    transform: translateY(0);
+}
+
+@media (max-width: 600px) {
+    .table-controls {
+        flex-direction: column;
+    }
+    
+    .btn-small {
+        width: 100%;
+    }
+    
+    .editable-table {
+        font-size: 0.75rem;
+    }
+    
+    .cell-input,
+    .filtered-cell-input {
+        padding: 4px;
+    }
+    
+    .header-input {
+        padding: 4px;
+    }
+}
+
