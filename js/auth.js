@@ -185,9 +185,21 @@ const Auth = {
             this.user = null;
             this.updateUI();
             
-            // Изчистваме историята
-            if (typeof History !== 'undefined') {
-                History.clear();
+            // Изчистваме историята от UI
+            const historyList = document.getElementById('history-list');
+            if (historyList) {
+                historyList.innerHTML = '<p class="empty-state">Влез в акаунта си за да видиш историята.</p>';
+            }
+            
+            // Изчистваме правилата от UI
+            const rulesList = document.getElementById('rules-list');
+            if (rulesList) {
+                rulesList.innerHTML = '<p class="empty-state">Влез в акаунта си за да видиш правилата.</p>';
+            }
+            
+            // Изчистваме избрания елемент от историята
+            if (typeof App !== 'undefined') {
+                App.selectedHistoryItem = null;
             }
         } catch (error) {
             console.error('Logout error:', error);
