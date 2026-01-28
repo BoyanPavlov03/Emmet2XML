@@ -202,7 +202,22 @@ const EmmetParser = {
                 
                 // Добавяме групата към правилното място
                 // Ако външният контекст НЕ е root (т.е. сме вътре в > context), добавяме като деца
-                if (outerContext && !outerContext._isRoot && outerContext.parent && outerContext.parent.length > 0) {
+                // НО ако outerContext е група, добавяме към нейния parent array
+                if (outerContext && outerContext._isGroup) {
+                    // Вътре в друга група - добавяме към нейния parent array
+                    if (multiplier > 1) {
+                        for (let i = 0; i < multiplier; i++) {
+                            for (const node of groupContent) {
+                                outerContext.parent.push(this.cloneNodeWithIndex(this.deepCloneNode(node), i + 1));
+                            }
+                        }
+                    } else {
+                        for (const node of groupContent) {
+                            outerContext.parent.push(this.deepCloneNode(node));
+                        }
+                    }
+                    context.siblings = groupContent;
+                } else if (outerContext && !outerContext._isRoot && outerContext.parent && outerContext.parent.length > 0) {
                     // Групата е дете - добавяме към children на parent nodes
                     for (const p of outerContext.parent) {
                         if (multiplier > 1) {
