@@ -1,7 +1,7 @@
 <?php
 /**
  * Database wrapper клас
- * Поддържа SQLite и MySQL
+ * Поддържа SQLite и MySQL (XAMPP)
  */
 
 class Database {
@@ -10,6 +10,7 @@ class Database {
     
     private function __construct() {
         $this->connect();
+        $this->ensureTablesExist();
     }
     
     public static function getInstance() {
@@ -29,8 +30,13 @@ class Database {
                 $this->pdo = new PDO('sqlite:' . DB_PATH);
                 $this->pdo->exec('PRAGMA foreign_keys = ON');
             } else {
-                $dsn = "mysql:host=" . DB_HOST . ";dbname=" . DB_NAME . ";charset=utf8mb4";
+                // MySQL (XAMPP)
+                $dsn = "mysql:host=" . DB_HOST . ";charset=utf8mb4";
                 $this->pdo = new PDO($dsn, DB_USER, DB_PASS);
+                
+                // Създаване на базата ако не съществува
+                $this->pdo->exec("CREATE DATABASE IF NOT EXISTS `" . DB_NAME . "` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
+                $this->pdo->exec("USE `" . DB_NAME . "`");
             }
             
             $this->pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
@@ -41,6 +47,15 @@ class Database {
                 die("Database connection failed: " . $e->getMessage());
             }
             die("Database connection failed");
+        }
+    }
+    
+    /**
+     * Проверява и създава таблиците ако не съществуват
+     */
+    private function ensureTablesExist() {
+        if (!$this->tableExists('users')) {
+            $this->initSchema();
         }
     }
     
@@ -85,10 +100,39 @@ class Database {
      * Инициализира базата данни от schema.sql
      */
     public function initSchema() {
-        $schemaFile = __DIR__ . '/../sql/schema.sql';
+        // Избира правилния schema файл според типа БД
+        if (DB_TYPE === 'mysql') {
+            $schemaFile = __DIR__ . '/../sql/schema_mysql.sql';
+        } else {
+            $schemaFile = __DIR__ . '/../sql/schema.sql';
+        }
+        
         if (file_exists($schemaFile)) {
             $sql = file_get_contents($schemaFile);
-            $this->pdo->exec($sql);
+            
+            // MySQL не поддържа множество заявки с exec(), разделяме ги
+            if (DB_TYPE === 'mysql') {
+                // Премахваме коментарите и разделяме по ;
+                $sql = preg_replace('/--.*$/m', '', $sql);
+                $statements = array_filter(array_map('trim', explode(';', $sql)));
+                
+                foreach ($statements as $statement) {
+                    if (!empty($statement)) {
+                        try {
+                            $this->pdo->exec($statement);
+                        } catch (PDOException $e) {
+                            // Игнорираме грешки за вече съществуващи индекси
+                            if (strpos($e->getMessage(), 'Duplicate') === false) {
+                                if (DEBUG_MODE) {
+                                    error_log("Schema error: " . $e->getMessage());
+                                }
+                            }
+                        }
+                    }
+                }
+            } else {
+                $this->pdo->exec($sql);
+            }
             return true;
         }
         return false;

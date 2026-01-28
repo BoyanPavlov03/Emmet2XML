@@ -1,20 +1,29 @@
 <?php
 /**
  * Конфигурация на приложението
+ * 
+ * ИНСТРУКЦИИ ЗА XAMPP:
+ * 1. Сменете DB_TYPE на 'mysql'
+ * 2. Създайте база данни 'emmet2xml' в phpMyAdmin
+ * 3. Импортирайте sql/schema_mysql.sql
  */
 
 // Режим на разработка
 define('DEBUG_MODE', true);
 
-// База данни настройки
-define('DB_TYPE', 'sqlite'); // 'sqlite' или 'mysql'
+// ============================================================
+// БАЗА ДАННИ - Изберете 'sqlite' или 'mysql'
+// ============================================================
+define('DB_TYPE', 'mysql'); // 'sqlite' или 'mysql'
+
+// SQLite настройки (ако DB_TYPE = 'sqlite')
 define('DB_PATH', __DIR__ . '/../data/emmet2xml.db');
 
-// MySQL настройки (ако се използва)
+// MySQL/XAMPP настройки (ако DB_TYPE = 'mysql')
 define('DB_HOST', 'localhost');
 define('DB_NAME', 'emmet2xml');
 define('DB_USER', 'root');
-define('DB_PASS', '');
+define('DB_PASS', ''); // XAMPP по подразбиране няма парола
 
 // Сесия настройки
 define('SESSION_LIFETIME', 3600 * 24); // 24 часа
