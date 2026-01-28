@@ -1,19 +1,9 @@
-/**
- * Statistics - Модул за статистика на документи
- */
-
 const Statistics = {
-    /**
-     * Анализира XML документ
-     */
     analyze(input) {
         const stats = XmlParser.analyze(input);
         return this.formatStats(stats);
     },
-    
-    /**
-     * Форматира статистиката за показване
-     */
+
     formatStats(stats) {
         return {
             overview: {
@@ -33,26 +23,17 @@ const Statistics = {
             topElements: this.getTop(stats.elements, 10)
         };
     },
-    
-    /**
-     * Сортира по брой (descending)
-     */
+
     sortByCount(obj) {
         return Object.entries(obj)
             .sort((a, b) => b[1] - a[1])
             .map(([name, count]) => ({ name, count }));
     },
-    
-    /**
-     * Взема топ N елемента
-     */
+
     getTop(obj, n) {
         return this.sortByCount(obj).slice(0, n);
     },
-    
-    /**
-     * Рендира статистиката
-     */
+
     render(stats) {
         return `
             <div class="stats-section">
@@ -84,7 +65,7 @@ const Statistics = {
                     </div>
                 </div>
             </div>
-            
+
             <div class="stats-section">
                 <h4>Топ 10 елементи</h4>
                 <ul class="stats-list">
@@ -96,7 +77,7 @@ const Statistics = {
                     `).join('')}
                 </ul>
             </div>
-            
+
             <div class="stats-section">
                 <h4>Топ 10 CSS класове</h4>
                 ${stats.topClasses.length > 0 ? `
@@ -110,7 +91,7 @@ const Statistics = {
                     </ul>
                 ` : '<p class="empty-state">Няма намерени CSS класове</p>'}
             </div>
-            
+
             <div class="stats-section">
                 <h4>Всички атрибути</h4>
                 ${stats.attributes.length > 0 ? `

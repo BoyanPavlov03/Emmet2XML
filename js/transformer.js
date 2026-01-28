@@ -1,12 +1,4 @@
-/**
- * Transformer - Модул за трансформации
- * Управлява трансформации между Emmet и XML
- */
-
 const Transformer = {
-    /**
-     * Настройки по подразбиране
-     */
     defaultSettings: {
         indent: '  ',
         showValues: true,
@@ -14,13 +6,10 @@ const Transformer = {
         showAttrValues: true,
         selfClosing: true
     },
-    
-    /**
-     * Трансформира Emmet към XML
-     */
+
     emmetToXml(emmet, settings = {}) {
         const opts = { ...this.defaultSettings, ...settings };
-        
+
         try {
             const ast = EmmetParser.parse(emmet);
             const xml = EmmetParser.generate(ast, opts);
@@ -29,13 +18,10 @@ const Transformer = {
             return { success: false, error: error.message };
         }
     },
-    
-    /**
-     * Трансформира XML към Emmet
-     */
+
     xmlToEmmet(xml, settings = {}) {
         const opts = { ...this.defaultSettings, ...settings };
-        
+
         try {
             const ast = XmlParser.parse(xml);
             const emmet = XmlParser.toEmmet(ast, opts);
@@ -44,10 +30,7 @@ const Transformer = {
             return { success: false, error: error.message };
         }
     },
-    
-    /**
-     * Двупосочна трансформация
-     */
+
     transform(input, direction, settings = {}) {
         if (direction === 'emmet2xml') {
             return this.emmetToXml(input, settings);
@@ -55,16 +38,12 @@ const Transformer = {
             return this.xmlToEmmet(input, settings);
         }
     },
-    
-/**
-     * Прилага правило (Pattern -> Replacement)
-     */
-    applyRule(xml, pattern, replacement) {
+
+applyRule(xml, pattern, replacement) {
         try {
-            // 1. Парсваме входа
+
             const ast = XmlParser.parse(xml);
-            
-            // 2. Парсваме шаблоните
+
             const searchPattern = this.parseSearchPattern(pattern);
             const replacementStructure = this.parseReplacementString(replacement);
 
@@ -72,12 +51,10 @@ const Transformer = {
                 return { success: false, error: 'Невалиден pattern или replacement' };
             }
 
-            // 3. Прилагаме правилото
             const resultAst = this.applyPatternToAst(ast, searchPattern, replacementStructure);
-            
-            // 4. Генерираме изхода
+
             const outputEmmet = EmmetParser.generate(resultAst, this.defaultSettings);
-            
+
             return { success: true, result: outputEmmet };
         } catch (error) {
             console.error(error);
@@ -85,36 +62,32 @@ const Transformer = {
         }
     },
 
-    // --- PARSERS ---
-
     parseSearchPattern(pattern) {
         if (!pattern) return [];
         return pattern.split('+').map(p => {
             const trimmed = p.trim();
-            // Regex: TagOrVar (:Constraint)? (.class)*
-            // Starts with Uppercase (E, Item) -> Variable
-            // Starts with Lowercase (div, span) -> Literal
+
             const match = trimmed.match(/^([a-zA-Z0-9-_]+)(?::([a-z0-9-]+))?((?:\.[a-zA-Z0-9-_]+)*)$/);
-            
+
             if (!match) return { type: 'literal', tag: trimmed };
 
             const key = match[1];
-            const constraint = match[2]; // e.g. E:div
+            const constraint = match[2];
             const classString = match[3];
             const classes = classString ? classString.split('.').filter(c => c) : [];
 
-            const isVar = /^[A-Z]/.test(key); // Convention: Uppercase = Variable
+            const isVar = /^[A-Z]/.test(key);
 
             if (isVar) {
-                return { 
-                    type: 'variable', 
-                    key: key, 
+                return {
+                    type: 'variable',
+                    key: key,
                     constraint: constraint,
-                    mustHaveClasses: classes 
+                    mustHaveClasses: classes
                 };
             } else {
-                return { 
-                    type: 'literal', 
+                return {
+                    type: 'literal',
                     tag: key,
                     mustHaveClasses: classes
                 };
@@ -124,15 +97,14 @@ const Transformer = {
 
     parseReplacementString(str) {
         if (!str) return [];
-        // Support sibling replacement (div+span)
+
         const parts = str.split('+').map(s => s.trim());
-        
+
         return parts.map(part => {
-            // Support hierarchy (div>span)
+
             const hierarchy = part.split('>').map(s => s.trim());
             let currentNode = this.parseToken(hierarchy[hierarchy.length - 1]);
-            
-            // Build tree bottom-up
+
             for (let i = hierarchy.length - 2; i >= 0; i--) {
                 const parentNode = this.parseToken(hierarchy[i]);
                 parentNode.children = [currentNode];
@@ -145,7 +117,7 @@ const Transformer = {
     parseToken(token) {
         const regex = /^([a-zA-Z][a-zA-Z0-9-_]*)(?::([a-z0-9-]+))?(?:#([a-zA-Z0-9-_]+))?((?:\.[a-zA-Z0-9-_]+)*)$/;
         const match = token.match(regex);
-        
+
         if (!match) return { type: 'literal', tag: token, children: [] };
 
         const mainPart = match[1];
@@ -166,14 +138,12 @@ const Transformer = {
         };
     },
 
-    // --- CORE LOGIC ---
-
     applyPatternToAst(nodes, searchPattern, replacementStructure) {
         const result = [];
         let i = 0;
 
         while (i < nodes.length) {
-            // MATCHING LOGIC
+
             if (i + searchPattern.length <= nodes.length) {
                 const matches = {};
                 let matched = true;
@@ -182,7 +152,6 @@ const Transformer = {
                     const pNode = searchPattern[j];
                     const astNode = nodes[i + j];
 
-                    // 1. Tag / Variable Check
                     if (pNode.type === 'variable') {
                         if (pNode.constraint && astNode.tag !== pNode.constraint) {
                             matched = false; break;
@@ -193,18 +162,16 @@ const Transformer = {
                         }
                     }
 
-                    // 2. Class Check
                     if (pNode.mustHaveClasses && pNode.mustHaveClasses.length > 0) {
                         const nodeClasses = astNode.classes || [];
                         const hasAll = pNode.mustHaveClasses.every(cls => nodeClasses.includes(cls));
                         if (!hasAll) { matched = false; break; }
                     }
 
-                    // Store match info
                     if (pNode.type === 'variable') {
                         matches[pNode.key] = {
                             node: astNode,
-                            // Store classes that caused the match, so we can remove them later (Smart Diffing)
+
                             removedClasses: pNode.mustHaveClasses || []
                         };
                     }
@@ -220,21 +187,18 @@ const Transformer = {
                 }
             }
 
-            // RECURSION (No match found)
             const node = nodes[i];
             const newNode = this.deepClone(node);
-            
+
             if (node.children && node.children.length > 0) {
                 newNode.children = this.applyPatternToAst(node.children, searchPattern, replacementStructure);
             }
-            
+
             result.push(newNode);
             i++;
         }
         return result;
     },
-
-    // --- NODE BUILDER ---
 
     buildNode(def, matches) {
         let outputNode = null;
@@ -278,15 +242,12 @@ const Transformer = {
             }
         }
 
-        // 4. Handle Nesting / Wrapping
         if (def.children && def.children.length > 0) {
             outputNode.children = def.children.map(childDef => this.buildNode(childDef, matches));
         }
 
         return outputNode;
     },
-
-    // --- HELPERS ---
 
     addClassesToNode(node, classesToAdd) {
         if (!classesToAdd || classesToAdd.length === 0) return;
@@ -301,13 +262,10 @@ const Transformer = {
     deepClone(obj) {
         return JSON.parse(JSON.stringify(obj));
     },
-    /**
-     * Извлича данни от таблица
-     */
     extractTableData(xml) {
         const ast = XmlParser.parse(xml);
         const tables = [];
-        
+
         const findTables = (nodes) => {
             for (const node of nodes) {
                 if (node.tag.toLowerCase() === 'table') {
@@ -318,24 +276,21 @@ const Transformer = {
                 }
             }
         };
-        
+
         findTables(ast);
         return tables;
     },
-    
-    /**
-     * Парсва таблица
-     */
+
     parseTable(tableNode) {
         const result = {
             headers: [],
             rows: []
         };
-        
+
         const findRows = (nodes, isHeader = false) => {
             for (const node of nodes) {
                 const tag = node.tag.toLowerCase();
-                
+
                 if (tag === 'thead') {
                     findRows(node.children, true);
                 } else if (tag === 'tbody' || tag === 'tfoot') {
@@ -348,7 +303,7 @@ const Transformer = {
                             row.push(cell.text || '');
                         }
                     }
-                    
+
                     if (isHeader || node.children.some(c => c.tag.toLowerCase() === 'th')) {
                         result.headers = row;
                     } else {
@@ -357,28 +312,24 @@ const Transformer = {
                 }
             }
         };
-        
+
         findRows(tableNode.children);
-        
-        // Ако няма headers, използваме първия ред
+
         if (result.headers.length === 0 && result.rows.length > 0) {
             result.headers = result.rows.shift();
         }
-        
+
         return result;
     },
-    
-    /**
-     * Извлича данни от списъци
-     */
+
     extractListData(xml) {
         const ast = XmlParser.parse(xml);
         const lists = [];
-        
+
         const findLists = (nodes) => {
             for (const node of nodes) {
                 const tag = node.tag.toLowerCase();
-                
+
                 if (tag === 'ul' || tag === 'ol') {
                     const items = [];
                     for (const child of node.children) {
@@ -394,27 +345,24 @@ const Transformer = {
                         items
                     });
                 }
-                
+
                 if (node.children) {
                     const nested = findLists(node.children);
                     lists.push(...nested);
                 }
             }
-            
+
             return lists;
         };
-        
+
         return findLists(ast);
     },
-    
-    /**
-     * Запазва трансформация в историята (изпраща към сървъра)
-     */
+
     async saveToHistory(inputType, inputData, outputData, settings) {
         if (!Auth.isLoggedIn()) {
             return { success: false, error: 'Not logged in' };
         }
-        
+
         try {
             const response = await fetch('php/history.php?action=save', {
                 method: 'POST',
@@ -428,7 +376,7 @@ const Transformer = {
                     settings: settings
                 })
             });
-            
+
             return await response.json();
         } catch (error) {
             return { success: false, error: error.message };
