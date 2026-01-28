@@ -56,110 +56,249 @@ const Transformer = {
         }
     },
     
-    /**
-     * Прилага правило за преструктуриране
-     * Pattern: E1+E2 -> E2+E1
+/**
+     * Прилага правило (Pattern -> Replacement)
      */
     applyRule(xml, pattern, replacement) {
         try {
-            // Парсваме входния XML
+            // 1. Парсваме входа
             const ast = XmlParser.parse(xml);
             
-            // Парсваме pattern-а (E1+E2 формат)
-            const patternParts = this.parsePattern(pattern);
-            const replacementParts = this.parsePattern(replacement);
-            
-            if (!patternParts || !replacementParts) {
+            // 2. Парсваме шаблоните
+            const searchPattern = this.parseSearchPattern(pattern);
+            const replacementStructure = this.parseReplacementString(replacement);
+
+            if (!searchPattern.length || !replacementStructure.length) {
                 return { success: false, error: 'Невалиден pattern или replacement' };
             }
+
+            // 3. Прилагаме правилото
+            const resultAst = this.applyPatternToAst(ast, searchPattern, replacementStructure);
             
-            // Прилагаме правилото
-            const result = this.applyPatternToAst(ast, patternParts, replacementParts);
+            // 4. Генерираме изхода
+            const outputEmmet = EmmetParser.generate(resultAst, this.defaultSettings);
             
-            // Генерираме XML от модифицирания AST
-            const outputXml = EmmetParser.generate(result, this.defaultSettings);
-            
-            return { success: true, result: outputXml };
+            return { success: true, result: outputEmmet };
         } catch (error) {
+            console.error(error);
             return { success: false, error: error.message };
         }
     },
-    
-    /**
-     * Парсва pattern (E1+E2 формат)
-     */
-    parsePattern(pattern) {
-        const parts = pattern.split('+').map(p => p.trim());
-        if (parts.length === 0) return null;
-        
-        return parts.map(p => {
-            const match = p.match(/^([A-Z])(\d+)$/);
-            if (match) {
-                return { type: 'variable', name: match[1], index: parseInt(match[2]) };
+
+    // --- PARSERS ---
+
+    parseSearchPattern(pattern) {
+        if (!pattern) return [];
+        return pattern.split('+').map(p => {
+            const trimmed = p.trim();
+            // Regex: TagOrVar (:Constraint)? (.class)*
+            // Starts with Uppercase (E, Item) -> Variable
+            // Starts with Lowercase (div, span) -> Literal
+            const match = trimmed.match(/^([a-zA-Z0-9-_]+)(?::([a-z0-9-]+))?((?:\.[a-zA-Z0-9-_]+)*)$/);
+            
+            if (!match) return { type: 'literal', tag: trimmed };
+
+            const key = match[1];
+            const constraint = match[2]; // e.g. E:div
+            const classString = match[3];
+            const classes = classString ? classString.split('.').filter(c => c) : [];
+
+            const isVar = /^[A-Z]/.test(key); // Convention: Uppercase = Variable
+
+            if (isVar) {
+                return { 
+                    type: 'variable', 
+                    key: key, 
+                    constraint: constraint,
+                    mustHaveClasses: classes 
+                };
+            } else {
+                return { 
+                    type: 'literal', 
+                    tag: key,
+                    mustHaveClasses: classes
+                };
             }
-            return { type: 'literal', value: p };
         });
     },
-    
-    /**
-     * Прилага pattern към AST
-     */
-    applyPatternToAst(nodes, patternParts, replacementParts) {
+
+    parseReplacementString(str) {
+        if (!str) return [];
+        // Support sibling replacement (div+span)
+        const parts = str.split('+').map(s => s.trim());
+        
+        return parts.map(part => {
+            // Support hierarchy (div>span)
+            const hierarchy = part.split('>').map(s => s.trim());
+            let currentNode = this.parseToken(hierarchy[hierarchy.length - 1]);
+            
+            // Build tree bottom-up
+            for (let i = hierarchy.length - 2; i >= 0; i--) {
+                const parentNode = this.parseToken(hierarchy[i]);
+                parentNode.children = [currentNode];
+                currentNode = parentNode;
+            }
+            return currentNode;
+        });
+    },
+
+    parseToken(token) {
+        // Regex: TagOrVar (:NewTag)? (.class)*
+        const regex = /^([a-zA-Z0-9-_]+)(?::([a-z0-9-]+))?((?:\.[a-zA-Z0-9-_]+)*)$/;
+        const match = token.match(regex);
+        
+        if (!match) return { type: 'literal', tag: token, children: [] };
+
+        const mainPart = match[1];
+        const newTag = match[2];
+        const classString = match[3];
+        const classes = classString ? classString.split('.').filter(c => c) : [];
+        const isVar = /^[A-Z]/.test(mainPart);
+
+        return {
+            type: isVar ? 'variable' : 'literal',
+            key: isVar ? mainPart : null,
+            tag: isVar ? null : mainPart,
+            newTag: newTag || null,
+            addListeners: classes, // Classes to ADD
+            children: []
+        };
+    },
+
+    // --- CORE LOGIC ---
+
+    applyPatternToAst(nodes, searchPattern, replacementStructure) {
         const result = [];
         let i = 0;
-        
+
         while (i < nodes.length) {
-            // Опитваме да намерим съвпадение
-            if (i + patternParts.length <= nodes.length) {
+            // MATCHING LOGIC
+            if (i + searchPattern.length <= nodes.length) {
                 const matches = {};
                 let matched = true;
-                
-                for (let j = 0; j < patternParts.length; j++) {
-                    const part = patternParts[j];
-                    const node = nodes[i + j];
-                    
-                    if (part.type === 'variable') {
-                        // Запазваме съвпадението
-                        const key = part.name + part.index;
-                        matches[key] = node;
-                    } else {
-                        // Literal - проверяваме за точно съвпадение на тага
-                        if (node.tag !== part.value) {
-                            matched = false;
-                            break;
+
+                for (let j = 0; j < searchPattern.length; j++) {
+                    const pNode = searchPattern[j];
+                    const astNode = nodes[i + j];
+
+                    // 1. Tag / Variable Check
+                    if (pNode.type === 'variable') {
+                        if (pNode.constraint && astNode.tag !== pNode.constraint) {
+                            matched = false; break;
                         }
+                    } else {
+                        if (astNode.tag !== pNode.tag) {
+                            matched = false; break;
+                        }
+                    }
+
+                    // 2. Class Check
+                    if (pNode.mustHaveClasses && pNode.mustHaveClasses.length > 0) {
+                        const nodeClasses = astNode.classes || [];
+                        const hasAll = pNode.mustHaveClasses.every(cls => nodeClasses.includes(cls));
+                        if (!hasAll) { matched = false; break; }
+                    }
+
+                    // Store match info
+                    if (pNode.type === 'variable') {
+                        matches[pNode.key] = {
+                            node: astNode,
+                            // Store classes that caused the match, so we can remove them later (Smart Diffing)
+                            removedClasses: pNode.mustHaveClasses || []
+                        };
                     }
                 }
-                
+
                 if (matched) {
-                    // Прилагаме replacement
-                    for (const rPart of replacementParts) {
-                        if (rPart.type === 'variable') {
-                            const key = rPart.name + rPart.index;
-                            if (matches[key]) {
-                                result.push(matches[key]);
-                            }
-                        } else {
-                            result.push({ tag: rPart.value, children: [], classes: [], attributes: {} });
-                        }
-                    }
-                    i += patternParts.length;
+                    replacementStructure.forEach(repNode => {
+                        const built = this.buildNode(repNode, matches);
+                        if (built) result.push(built);
+                    });
+                    i += searchPattern.length;
                     continue;
                 }
             }
-            
-            // Не е намерено съвпадение - копираме node-а
+
+            // RECURSION (No match found)
             const node = nodes[i];
+            const newNode = this.deepClone(node);
+            
             if (node.children && node.children.length > 0) {
-                node.children = this.applyPatternToAst(node.children, patternParts, replacementParts);
+                newNode.children = this.applyPatternToAst(node.children, searchPattern, replacementStructure);
             }
-            result.push(node);
+            
+            result.push(newNode);
             i++;
         }
-        
         return result;
     },
-    
+
+    // --- NODE BUILDER ---
+
+    buildNode(def, matches) {
+        let outputNode = null;
+
+        if (def.type === 'variable') {
+            const matchData = matches[def.key];
+            if (!matchData) return null; // Should not happen
+
+            const original = matchData.node;
+            const classesToRemove = matchData.removedClasses;
+
+            // Deep clone to avoid mutating original AST
+            outputNode = this.deepClone(original);
+
+            // 1. Class Diffing (Remove classes found in pattern)
+            // E.g. E.old -> E.new: Remove 'old'
+            if (classesToRemove && classesToRemove.length > 0) {
+                outputNode.classes = outputNode.classes.filter(c => !classesToRemove.includes(c));
+            }
+
+            // 2. Change Tag (E:span)
+            if (def.newTag) outputNode.tag = def.newTag;
+
+            // 3. Add New Classes
+            if (def.addListeners) {
+                this.addClassesToNode(outputNode, def.addListeners);
+            }
+
+        } else {
+            // Literal Node (e.g. div.wrapper)
+            outputNode = {
+                tag: def.tag,
+                children: [],
+                classes: [],
+                attributes: {},
+                text: null
+            };
+            if (def.addListeners) {
+                this.addClassesToNode(outputNode, def.addListeners);
+            }
+        }
+
+        // 4. Handle Nesting / Wrapping
+        if (def.children && def.children.length > 0) {
+            outputNode.children = def.children.map(childDef => this.buildNode(childDef, matches));
+        }
+
+        return outputNode;
+    },
+
+    // --- HELPERS ---
+
+    addClassesToNode(node, classesToAdd) {
+        if (!classesToAdd || classesToAdd.length === 0) return;
+
+        classesToAdd.forEach(cls => {
+            if (!node.classes.includes(cls)) {
+                node.classes.push(cls);
+            }
+        });
+    },
+
+    deepClone(obj) {
+        return JSON.parse(JSON.stringify(obj));
+    },
     /**
      * Извлича данни от таблица
      */
