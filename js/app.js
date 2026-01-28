@@ -1475,9 +1475,11 @@ const App = {
         html += '<th class="row-number-header">#</th>';
         this.tableHeaders.forEach((h, colIdx) => {
             html += `<th class="editable-header" data-col="${colIdx}">
+                    <div class="header-cell-container">
                         <input type="text" value="${this.escapeHtml(h)}" class="header-input" data-col="${colIdx}">
                         <button class="btn-delete-col" data-col="${colIdx}" title="Изтрий колона">✕</button>
-                    </th>`;
+                    </div>    
+                </th>`;
         });
         html += '</tr></thead><tbody>';
         

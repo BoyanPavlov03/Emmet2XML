@@ -657,6 +657,7 @@ body {
     box-shadow: var(--shadow);
     display: flex;
     flex-direction: column;
+    min-width: 0;
 }
 
 .analysis-results h3 {
@@ -911,13 +912,16 @@ body {
 .editable-table-container {
     display: flex;
     flex-direction: column;
-    gap: 15px;
+    gap: 6px;
+    align-items: stretch;
+    overflow-x: auto;
     margin-top: 15px;
 }
 
 .table-controls {
     display: flex;
     gap: 8px;
+    width: auto;
     flex-wrap: wrap;
     padding: 10px;
     background-color: var(--light-color);
@@ -969,6 +973,13 @@ body {
     position: relative;
 }
 
+div.header-cell-container {
+    display: flex;
+    flex-direction: row;
+    min-width: 100px;
+    gap: 6px;
+}
+
 .row-number-header {
     width: 50px;
     text-align: center;
@@ -976,19 +987,18 @@ body {
 
 .editable-header {
     position: relative;
-    display: flex;
     align-items: center;
     gap: 4px;
     padding: 0 !important;
 }
 
 .header-input {
-    flex: 1;
     padding: 8px;
     border: none;
     background: transparent;
     font-weight: 600;
     font-size: inherit;
+    width: 90%;
 }
 
 .header-input:focus {
