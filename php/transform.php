@@ -1,9 +1,4 @@
 <?php
-/**
- * API за трансформации (server-side)
- * Може да се използва за по-сложни операции
- */
-
 require_once __DIR__ . '/utils.php';
 
 initDatabaseIfNeeded();
@@ -28,18 +23,10 @@ switch ($action) {
         jsonError('Invalid action', 400);
 }
 
-/**
- * Основна трансформация (за бъдещо разширение)
- */
 function handleTransform($data) {
-    // За сега трансформациите се правят на клиента
-    // Този endpoint може да се използва за сложни операции
     jsonSuccess(['message' => 'Use client-side transformation']);
 }
 
-/**
- * Извлича данни от таблица
- */
 function handleExtractTable($data) {
     $xml = $data['xml'] ?? '';
     
@@ -47,7 +34,6 @@ function handleExtractTable($data) {
         jsonError('Missing XML input');
     }
     
-    // Използваме вградения DOM парсер на PHP
     libxml_use_internal_errors(true);
     $doc = new DOMDocument();
     $doc->loadHTML('<?xml encoding="UTF-8">' . $xml, LIBXML_HTML_NOIMPLIED | LIBXML_HTML_NODEFDTD);
@@ -61,7 +47,6 @@ function handleExtractTable($data) {
             'rows' => []
         ];
         
-        // Find headers
         $thead = $table->getElementsByTagName('thead')->item(0);
         if ($thead) {
             $ths = $thead->getElementsByTagName('th');
@@ -70,14 +55,12 @@ function handleExtractTable($data) {
             }
         }
         
-        // Find rows
         $rows = $table->getElementsByTagName('tr');
         foreach ($rows as $row) {
             $rowData = [];
             $cells = $row->getElementsByTagName('td');
             
             if ($cells->length === 0) {
-                // Try th if no td (header row)
                 $cells = $row->getElementsByTagName('th');
                 if ($cells->length > 0 && empty($tableData['headers'])) {
                     foreach ($cells as $cell) {
@@ -102,9 +85,6 @@ function handleExtractTable($data) {
     jsonSuccess(['tables' => $result]);
 }
 
-/**
- * Извлича данни от списъци
- */
 function handleExtractList($data) {
     $xml = $data['xml'] ?? '';
     
@@ -118,7 +98,6 @@ function handleExtractList($data) {
     
     $result = [];
     
-    // Find ul and ol
     foreach (['ul', 'ol'] as $listType) {
         $lists = $doc->getElementsByTagName($listType);
         foreach ($lists as $list) {
@@ -129,7 +108,6 @@ function handleExtractList($data) {
             
             $items = $list->getElementsByTagName('li');
             foreach ($items as $item) {
-                // Get direct text content (not nested lists)
                 $text = '';
                 foreach ($item->childNodes as $child) {
                     if ($child->nodeType === XML_TEXT_NODE) {
@@ -146,9 +124,6 @@ function handleExtractList($data) {
     jsonSuccess(['lists' => $result]);
 }
 
-/**
- * Статистика на документ
- */
 function handleStatistics($data) {
     $xml = $data['xml'] ?? '';
     
@@ -177,12 +152,10 @@ function handleStatistics($data) {
         $tagName = strtolower($node->tagName);
         $stats['elements'][$tagName] = ($stats['elements'][$tagName] ?? 0) + 1;
         
-        // Attributes
         if ($node->hasAttributes()) {
             foreach ($node->attributes as $attr) {
                 $stats['attributes'][$attr->name] = ($stats['attributes'][$attr->name] ?? 0) + 1;
                 
-                // Classes
                 if ($attr->name === 'class') {
                     $classes = preg_split('/\s+/', $attr->value);
                     foreach ($classes as $class) {
@@ -194,7 +167,6 @@ function handleStatistics($data) {
             }
         }
         
-        // Children
         foreach ($node->childNodes as $child) {
             $analyzeNode($child, $depth + 1);
         }
@@ -202,7 +174,6 @@ function handleStatistics($data) {
     
     $analyzeNode($doc->documentElement);
     
-    // Sort by count
     arsort($stats['elements']);
     arsort($stats['classes']);
     arsort($stats['attributes']);

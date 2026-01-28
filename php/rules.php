@@ -1,8 +1,4 @@
 <?php
-/**
- * API за правила за преструктуриране
- */
-
 require_once __DIR__ . '/utils.php';
 
 initDatabaseIfNeeded();
@@ -27,9 +23,6 @@ switch ($action) {
         jsonError('Invalid action', 400);
 }
 
-/**
- * Запазва ново правило
- */
 function handleSave($data) {
     $name = trim($data['name'] ?? '');
     $pattern = trim($data['pattern'] ?? '');
@@ -52,9 +45,6 @@ function handleSave($data) {
     jsonSuccess(['id' => $id], 'Rule saved');
 }
 
-/**
- * Връща списък с правила
- */
 function handleList() {
     $db = Database::getInstance();
     $userId = getCurrentUserId();
@@ -70,9 +60,6 @@ function handleList() {
     jsonSuccess(['items' => $items]);
 }
 
-/**
- * Изтрива правило
- */
 function handleDelete($data) {
     $id = $data['id'] ?? 0;
     

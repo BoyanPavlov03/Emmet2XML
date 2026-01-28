@@ -1,9 +1,4 @@
 <?php
-/**
- * Database wrapper клас
- * Поддържа SQLite и MySQL (XAMPP)
- */
-
 class Database {
     private static $instance = null;
     private $pdo;
@@ -30,11 +25,8 @@ class Database {
                 $this->pdo = new PDO('sqlite:' . DB_PATH);
                 $this->pdo->exec('PRAGMA foreign_keys = ON');
             } else {
-                // MySQL (XAMPP)
                 $dsn = "mysql:host=" . DB_HOST . ";charset=utf8mb4";
                 $this->pdo = new PDO($dsn, DB_USER, DB_PASS);
-                
-                // Създаване на базата ако не съществува
                 $this->pdo->exec("CREATE DATABASE IF NOT EXISTS `" . DB_NAME . "` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
                 $this->pdo->exec("USE `" . DB_NAME . "`");
             }
@@ -50,9 +42,6 @@ class Database {
         }
     }
     
-    /**
-     * Проверява и създава таблиците ако не съществуват
-     */
     private function ensureTablesExist() {
         if (!$this->tableExists('users')) {
             $this->initSchema();
@@ -63,44 +52,28 @@ class Database {
         return $this->pdo;
     }
     
-    /**
-     * Изпълнява SELECT заявка
-     */
     public function query($sql, $params = []) {
         $stmt = $this->pdo->prepare($sql);
         $stmt->execute($params);
         return $stmt->fetchAll();
     }
     
-    /**
-     * Връща един ред
-     */
     public function queryOne($sql, $params = []) {
         $stmt = $this->pdo->prepare($sql);
         $stmt->execute($params);
         return $stmt->fetch();
     }
     
-    /**
-     * Изпълнява INSERT/UPDATE/DELETE
-     */
     public function execute($sql, $params = []) {
         $stmt = $this->pdo->prepare($sql);
         return $stmt->execute($params);
     }
     
-    /**
-     * Връща последния вмъкнат ID
-     */
     public function lastInsertId() {
         return $this->pdo->lastInsertId();
     }
     
-    /**
-     * Инициализира базата данни от schema.sql
-     */
     public function initSchema() {
-        // Избира правилния schema файл според типа БД
         if (DB_TYPE === 'mysql') {
             $schemaFile = __DIR__ . '/../sql/schema_mysql.sql';
         } else {
@@ -110,9 +83,7 @@ class Database {
         if (file_exists($schemaFile)) {
             $sql = file_get_contents($schemaFile);
             
-            // MySQL не поддържа множество заявки с exec(), разделяме ги
             if (DB_TYPE === 'mysql') {
-                // Премахваме коментарите и разделяме по ;
                 $sql = preg_replace('/--.*$/m', '', $sql);
                 $statements = array_filter(array_map('trim', explode(';', $sql)));
                 
@@ -121,7 +92,6 @@ class Database {
                         try {
                             $this->pdo->exec($statement);
                         } catch (PDOException $e) {
-                            // Игнорираме грешки за вече съществуващи индекси
                             if (strpos($e->getMessage(), 'Duplicate') === false) {
                                 if (DEBUG_MODE) {
                                     error_log("Schema error: " . $e->getMessage());
@@ -138,9 +108,6 @@ class Database {
         return false;
     }
     
-    /**
-     * Проверява дали таблица съществува
-     */
     public function tableExists($table) {
         try {
             if (DB_TYPE === 'sqlite') {

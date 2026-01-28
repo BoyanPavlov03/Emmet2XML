@@ -1,15 +1,8 @@
 <?php
-/**
- * API за автентикация
- * Endpoints: register, login, logout, check
- */
-
 require_once __DIR__ . '/utils.php';
 
-// Инициализираме базата данни
 initDatabaseIfNeeded();
 
-// Определяме action от URL или POST
 $action = $_GET['action'] ?? '';
 $data = getPostData();
 
@@ -30,16 +23,12 @@ switch ($action) {
         jsonError('Invalid action', 400);
 }
 
-/**
- * Регистрация на нов потребител
- */
 function handleRegister($data) {
     $username = trim($data['username'] ?? '');
     $email = trim($data['email'] ?? '');
     $password = $data['password'] ?? '';
     $passwordConfirm = $data['password_confirm'] ?? '';
     
-    // Валидация
     if (empty($username) || empty($email) || empty($password)) {
         jsonError('Всички полета са задължителни');
     }
@@ -62,7 +51,6 @@ function handleRegister($data) {
     
     $db = Database::getInstance();
     
-    // Проверка за съществуващ потребител
     $existing = $db->queryOne(
         "SELECT id FROM users WHERE username = ? OR email = ?",
         [$username, $email]
@@ -72,7 +60,6 @@ function handleRegister($data) {
         jsonError('Потребител с това име или email вече съществува');
     }
     
-    // Хеширане на парола и запис
     $passwordHash = password_hash($password, PASSWORD_DEFAULT);
     
     $db->execute(
@@ -82,7 +69,6 @@ function handleRegister($data) {
     
     $userId = $db->lastInsertId();
     
-    // Автоматичен login след регистрация
     $_SESSION['user_id'] = $userId;
     $_SESSION['username'] = $username;
     
@@ -95,9 +81,6 @@ function handleRegister($data) {
     ], 'Регистрацията е успешна');
 }
 
-/**
- * Вход в системата
- */
 function handleLogin($data) {
     $username = trim($data['username'] ?? '');
     $password = $data['password'] ?? '';
@@ -117,7 +100,6 @@ function handleLogin($data) {
         jsonError('Грешно потребителско име или парола');
     }
     
-    // Записваме в сесията
     $_SESSION['user_id'] = $user['id'];
     $_SESSION['username'] = $user['username'];
     
@@ -130,17 +112,11 @@ function handleLogin($data) {
     ], 'Успешен вход');
 }
 
-/**
- * Изход от системата
- */
 function handleLogout() {
     session_destroy();
     jsonSuccess([], 'Успешен изход');
 }
 
-/**
- * Проверка на автентикация
- */
 function handleCheck() {
     if (isLoggedIn()) {
         $db = Database::getInstance();
