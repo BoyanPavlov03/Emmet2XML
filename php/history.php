@@ -1,8 +1,4 @@
 <?php
-/**
- * API за история на трансформациите
- */
-
 require_once __DIR__ . '/utils.php';
 
 initDatabaseIfNeeded();
@@ -31,9 +27,6 @@ switch ($action) {
         jsonError('Invalid action', 400);
 }
 
-/**
- * Запазва нова трансформация
- */
 function handleSave($data) {
     $inputType = $data['input_type'] ?? '';
     $inputData = $data['input_data'] ?? '';
@@ -62,16 +55,13 @@ function handleSave($data) {
     jsonSuccess(['id' => $id], 'Transformation saved');
 }
 
-/**
- * Връща списък с трансформации
- */
 function handleList() {
     $db = Database::getInstance();
     $userId = getCurrentUserId();
     
     $type = $_GET['type'] ?? 'all';
-    $limit = min((int)($_GET['limit'] ?? 50), 100);
-    $offset = (int)($_GET['offset'] ?? 0);
+    $limit = (int) min((int)($_GET['limit'] ?? 50), 100);
+    $offset = (int) ($_GET['offset'] ?? 0);
     
     $sql = "SELECT id, input_type, input_data, output_data, settings_json, created_at 
             FROM transformations 
@@ -83,19 +73,15 @@ function handleList() {
         $params[] = $type;
     }
     
-    $sql .= " ORDER BY created_at DESC LIMIT ? OFFSET ?";
-    $params[] = $limit;
-    $params[] = $offset;
+    $sql .= " ORDER BY created_at DESC LIMIT $limit OFFSET $offset";
     
     $items = $db->query($sql, $params);
     
-    // Декодираме settings_json
     foreach ($items as &$item) {
         $item['settings'] = json_decode($item['settings_json'], true);
         unset($item['settings_json']);
     }
     
-    // Броим общо записи
     $countSql = "SELECT COUNT(*) as total FROM transformations WHERE user_id = ?";
     $countParams = [$userId];
     if ($type !== 'all' && in_array($type, ['emmet', 'xml'])) {
@@ -112,9 +98,6 @@ function handleList() {
     ]);
 }
 
-/**
- * Връща единична трансформация
- */
 function handleGet($data) {
     $id = $data['id'] ?? $_GET['id'] ?? 0;
     
@@ -142,9 +125,6 @@ function handleGet($data) {
     jsonSuccess(['item' => $item]);
 }
 
-/**
- * Изтрива трансформация
- */
 function handleDelete($data) {
     $id = $data['id'] ?? 0;
     
