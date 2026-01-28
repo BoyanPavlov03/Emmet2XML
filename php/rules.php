@@ -15,6 +15,10 @@ switch ($action) {
         requireAuth();
         handleList();
         break;
+    case 'toggle':
+        requireAuth();
+        handleToggle($data);
+        break;
     case 'delete':
         requireAuth();
         handleDelete($data);
@@ -35,29 +39,78 @@ function handleSave($data) {
     $db = Database::getInstance();
     $userId = getCurrentUserId();
     
+    ensureEnabledColumn($db);
+    
     $db->execute(
-        "INSERT INTO refactor_rules (user_id, name, pattern, replacement) VALUES (?, ?, ?, ?)",
+        "INSERT INTO refactor_rules (user_id, name, pattern, replacement, enabled) VALUES (?, ?, ?, ?, 1)",
         [$userId, $name, $pattern, $replacement]
     );
     
     $id = $db->lastInsertId();
     
-    jsonSuccess(['id' => $id], 'Rule saved');
+    jsonSuccess(['id' => $id, 'enabled' => true], 'Rule saved');
+}
+
+function ensureEnabledColumn($db) {
+    try {
+        if (DB_TYPE === 'mysql') {
+            $result = $db->query("SHOW COLUMNS FROM refactor_rules LIKE 'enabled'");
+            if (empty($result)) {
+                $db->execute("ALTER TABLE refactor_rules ADD COLUMN enabled TINYINT(1) DEFAULT 1");
+            }
+        } else {
+            $result = $db->query("PRAGMA table_info(refactor_rules)");
+            $hasEnabled = false;
+            foreach ($result as $col) {
+                if ($col['name'] === 'enabled') $hasEnabled = true;
+            }
+            if (!$hasEnabled) {
+                $db->execute("ALTER TABLE refactor_rules ADD COLUMN enabled INTEGER DEFAULT 1");
+            }
+        }
+    } catch (Exception $e) {}
 }
 
 function handleList() {
     $db = Database::getInstance();
     $userId = getCurrentUserId();
     
+    ensureEnabledColumn($db);
+    
     $items = $db->query(
-        "SELECT id, name, pattern, replacement, created_at 
+        "SELECT id, name, pattern, replacement, enabled, created_at 
          FROM refactor_rules 
          WHERE user_id = ? 
          ORDER BY created_at DESC",
         [$userId]
     );
     
+    foreach ($items as &$item) {
+        $item['enabled'] = (bool) ($item['enabled'] ?? 1);
+    }
+    
     jsonSuccess(['items' => $items]);
+}
+
+function handleToggle($data) {
+    $id = $data['id'] ?? 0;
+    $enabled = isset($data['enabled']) ? ($data['enabled'] ? 1 : 0) : null;
+    
+    if (!$id || $enabled === null) {
+        jsonError('Missing ID or enabled state');
+    }
+    
+    $db = Database::getInstance();
+    $userId = getCurrentUserId();
+    
+    ensureEnabledColumn($db);
+    
+    $db->execute(
+        "UPDATE refactor_rules SET enabled = ? WHERE id = ? AND user_id = ?",
+        [$enabled, $id, $userId]
+    );
+    
+    jsonSuccess(['enabled' => (bool) $enabled], 'Rule updated');
 }
 
 function handleDelete($data) {

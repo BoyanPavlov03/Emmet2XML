@@ -675,8 +675,8 @@ const App = {
             let result = xmlToProcess;
             let appliedCount = 0;
             
-            // Прилагаме всяко правило последователно
             for (const rule of data.items) {
+                if (!rule.enabled) continue;
                 const transformed = Transformer.applyRule(result, rule.pattern, rule.replacement);
                 if (transformed.success && transformed.result !== result) {
                     result = transformed.result;
@@ -1002,7 +1002,10 @@ const App = {
         }
         
         list.innerHTML = items.map(item => `
-            <div class="rule-item" data-id="${item.id}">
+            <div class="rule-item ${item.enabled ? '' : 'rule-disabled'}" data-id="${item.id}">
+                <div class="rule-item-toggle">
+                    <input type="checkbox" class="rule-toggle" data-id="${item.id}" ${item.enabled ? 'checked' : ''}>
+                </div>
                 <div class="rule-item-info">
                     <div class="rule-item-name">${this.escapeHtml(item.name)}</div>
                     <div class="rule-item-pattern">${this.escapeHtml(item.pattern)} → ${this.escapeHtml(item.replacement)}</div>
@@ -1011,13 +1014,34 @@ const App = {
             </div>
         `).join('');
         
-        // Delete handlers
         list.querySelectorAll('.btn-delete-rule').forEach(btn => {
             btn.addEventListener('click', async (e) => {
                 e.stopPropagation();
                 await this.deleteRule(btn.dataset.id);
             });
         });
+        
+        list.querySelectorAll('.rule-toggle').forEach(checkbox => {
+            checkbox.addEventListener('change', async (e) => {
+                await this.toggleRule(checkbox.dataset.id, checkbox.checked);
+            });
+        });
+    },
+    
+    async toggleRule(id, enabled) {
+        try {
+            await fetch('php/rules.php?action=toggle', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id, enabled })
+            });
+            const item = document.querySelector(`.rule-item[data-id="${id}"]`);
+            if (item) {
+                item.classList.toggle('rule-disabled', !enabled);
+            }
+        } catch (error) {
+            console.error('Toggle rule error:', error);
+        }
     },
     
     /**
@@ -1056,6 +1080,7 @@ const App = {
                 let result = input;
                 
                 for (const rule of data.items) {
+                    if (!rule.enabled) continue;
                     const transformed = Transformer.applyRule(result, rule.pattern, rule.replacement);
                     if (transformed.success) {
                         result = transformed.result;

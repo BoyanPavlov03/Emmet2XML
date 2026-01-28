@@ -143,15 +143,15 @@ const Transformer = {
     },
 
     parseToken(token) {
-        // Regex: TagOrVar (:NewTag)? (.class)*
-        const regex = /^([a-zA-Z0-9-_]+)(?::([a-z0-9-]+))?((?:\.[a-zA-Z0-9-_]+)*)$/;
+        const regex = /^([a-zA-Z][a-zA-Z0-9-_]*)(?::([a-z0-9-]+))?(?:#([a-zA-Z0-9-_]+))?((?:\.[a-zA-Z0-9-_]+)*)$/;
         const match = token.match(regex);
         
         if (!match) return { type: 'literal', tag: token, children: [] };
 
         const mainPart = match[1];
         const newTag = match[2];
-        const classString = match[3];
+        const id = match[3] || null;
+        const classString = match[4];
         const classes = classString ? classString.split('.').filter(c => c) : [];
         const isVar = /^[A-Z]/.test(mainPart);
 
@@ -160,7 +160,8 @@ const Transformer = {
             key: isVar ? mainPart : null,
             tag: isVar ? null : mainPart,
             newTag: newTag || null,
-            addListeners: classes, // Classes to ADD
+            addId: id,
+            addClasses: classes,
             children: []
         };
     },
@@ -240,30 +241,28 @@ const Transformer = {
 
         if (def.type === 'variable') {
             const matchData = matches[def.key];
-            if (!matchData) return null; // Should not happen
+            if (!matchData) return null;
 
             const original = matchData.node;
             const classesToRemove = matchData.removedClasses;
 
-            // Deep clone to avoid mutating original AST
             outputNode = this.deepClone(original);
 
-            // 1. Class Diffing (Remove classes found in pattern)
-            // E.g. E.old -> E.new: Remove 'old'
             if (classesToRemove && classesToRemove.length > 0) {
                 outputNode.classes = outputNode.classes.filter(c => !classesToRemove.includes(c));
             }
 
-            // 2. Change Tag (E:span)
             if (def.newTag) outputNode.tag = def.newTag;
 
-            // 3. Add New Classes
-            if (def.addListeners) {
-                this.addClassesToNode(outputNode, def.addListeners);
+            if (def.addId) {
+                outputNode.id = def.addId;
+            }
+
+            if (def.addClasses) {
+                this.addClassesToNode(outputNode, def.addClasses);
             }
 
         } else {
-            // Literal Node (e.g. div.wrapper)
             outputNode = {
                 tag: def.tag,
                 children: [],
@@ -271,8 +270,11 @@ const Transformer = {
                 attributes: {},
                 text: null
             };
-            if (def.addListeners) {
-                this.addClassesToNode(outputNode, def.addListeners);
+            if (def.addId) {
+                outputNode.id = def.addId;
+            }
+            if (def.addClasses) {
+                this.addClassesToNode(outputNode, def.addClasses);
             }
         }
 

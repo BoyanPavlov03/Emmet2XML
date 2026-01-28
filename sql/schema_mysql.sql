@@ -43,6 +43,7 @@ CREATE TABLE IF NOT EXISTS refactor_rules (
     name VARCHAR(100) NOT NULL,
     pattern TEXT NOT NULL,
     replacement TEXT NOT NULL,
+    enabled TINYINT(1) DEFAULT 1,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
