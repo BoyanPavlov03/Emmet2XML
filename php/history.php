@@ -70,8 +70,8 @@ function handleList() {
     $userId = getCurrentUserId();
     
     $type = $_GET['type'] ?? 'all';
-    $limit = min((int)($_GET['limit'] ?? 50), 100);
-    $offset = (int)($_GET['offset'] ?? 0);
+    $limit = (int) min((int)($_GET['limit'] ?? 50), 100);
+    $offset = (int) ($_GET['offset'] ?? 0);
     
     $sql = "SELECT id, input_type, input_data, output_data, settings_json, created_at 
             FROM transformations 
@@ -83,9 +83,8 @@ function handleList() {
         $params[] = $type;
     }
     
-    $sql .= " ORDER BY created_at DESC LIMIT ? OFFSET ?";
-    $params[] = $limit;
-    $params[] = $offset;
+    // LIMIT и OFFSET трябва да са директно в SQL за MySQL
+    $sql .= " ORDER BY created_at DESC LIMIT $limit OFFSET $offset";
     
     $items = $db->query($sql, $params);
     
