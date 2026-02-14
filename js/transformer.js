@@ -66,15 +66,40 @@ applyRule(xml, pattern, replacement) {
         if (!pattern) return [];
         return pattern.split('+').map(p => {
             const trimmed = p.trim();
-
-            const match = trimmed.match(/^([a-zA-Z0-9-_]+)(?::([a-z0-9-]+))?((?:\.[a-zA-Z0-9-_]+)*)$/);
+            // Разрешаваме множество двоеточия за пълната комбинация ns:Var:constraint
+            const match = trimmed.match(/^([a-zA-Z0-9-_:]+)((?:\.[a-zA-Z0-9-_]+)*)$/);
 
             if (!match) return { type: 'literal', tag: trimmed };
 
-            const key = match[1];
-            const constraint = match[2];
-            const classString = match[3];
+            const mainPart = match[1];
+            const classString = match[2];
             const classes = classString ? classString.split('.').filter(c => c) : [];
+
+            const parts = mainPart.split(':');
+            let ns = undefined, key = undefined, constraint = undefined;
+
+            if (parts.length === 1) {
+                key = parts[0];
+            } else if (parts.length === 2) {
+                if (/^[A-Z]/.test(parts[0]) && !/^[A-Z]/.test(parts[1])) {
+                    // Пример: A:div (Променлива A, ограничение div)
+                    key = parts[0];
+                    constraint = parts[1];
+                } else if (/^[A-Z]/.test(parts[1])) {
+                    // Пример: foo:A (Namespace foo, Променлива A)
+                    ns = parts[0];
+                    key = parts[1];
+                } else {
+                    // Пример: foo:div (Namespace foo, литерал div)
+                    ns = parts[0];
+                    key = parts[1];
+                }
+            } else if (parts.length >= 3) {
+                // Пример: foo:A:div (Namespace foo, Променлива A, ограничение div)
+                ns = parts[0];
+                key = parts[1];
+                constraint = parts[2];
+            }
 
             const isVar = /^[A-Z]/.test(key);
 
@@ -82,13 +107,14 @@ applyRule(xml, pattern, replacement) {
                 return {
                     type: 'variable',
                     key: key,
+                    explicitNs: ns, // Пазим информация дали изрично е търсен namespace
                     constraint: constraint,
                     mustHaveClasses: classes
                 };
             } else {
                 return {
                     type: 'literal',
-                    tag: key,
+                    tag: ns ? `${ns}:${key}` : key,
                     mustHaveClasses: classes
                 };
             }
@@ -115,23 +141,50 @@ applyRule(xml, pattern, replacement) {
     },
 
     parseToken(token) {
-        const regex = /^([a-zA-Z][a-zA-Z0-9-_]*)(?::([a-z0-9-]+))?(?:#([a-zA-Z0-9-_]+))?((?:\.[a-zA-Z0-9-_]+)*)$/;
+        const regex = /^([a-zA-Z0-9-_:]+)(?:#([a-zA-Z0-9-_]+))?((?:\.[a-zA-Z0-9-_]+)*)$/;
         const match = token.match(regex);
 
         if (!match) return { type: 'literal', tag: token, children: [] };
 
         const mainPart = match[1];
-        const newTag = match[2];
-        const id = match[3] || null;
-        const classString = match[4];
+        const id = match[2] || null;
+        const classString = match[3];
         const classes = classString ? classString.split('.').filter(c => c) : [];
-        const isVar = /^[A-Z]/.test(mainPart);
+
+        const parts = mainPart.split(':');
+        let ns = undefined, key = undefined, newTag = undefined;
+
+        if (parts.length === 1) {
+            key = parts[0];
+        } else if (parts.length === 2) {
+            if (/^[A-Z]/.test(parts[0]) && !/^[A-Z]/.test(parts[1])) {
+                // Пример: A:span (Променлива A, нов таг span)
+                key = parts[0];
+                newTag = parts[1];
+            } else if (/^[A-Z]/.test(parts[1])) {
+                // Пример: foo:A (Namespace foo, Променлива A)
+                ns = parts[0];
+                key = parts[1];
+            } else {
+                // Пример: foo:span (Namespace foo, литерал span)
+                ns = parts[0];
+                key = parts[1];
+            }
+        } else if (parts.length >= 3) {
+            // Пример: foo:A:span (Namespace foo, Променлива A, нов таг span)
+            ns = parts[0];
+            key = parts[1];
+            newTag = parts[2];
+        }
+
+        const isVar = /^[A-Z]/.test(key);
 
         return {
             type: isVar ? 'variable' : 'literal',
-            key: isVar ? mainPart : null,
-            tag: isVar ? null : mainPart,
-            newTag: newTag || null,
+            key: isVar ? key : null,
+            tag: isVar ? null : (ns ? `${ns}:${key}` : key),
+            ns: ns,           // Изричен namespace за прилагане
+            newTag: newTag,   // Изричен нов локален таг
             addId: id,
             addClasses: classes,
             children: []
@@ -143,7 +196,6 @@ applyRule(xml, pattern, replacement) {
         let i = 0;
 
         while (i < nodes.length) {
-
             if (i + searchPattern.length <= nodes.length) {
                 const matches = {};
                 let matched = true;
@@ -153,7 +205,17 @@ applyRule(xml, pattern, replacement) {
                     const astNode = nodes[i + j];
 
                     if (pNode.type === 'variable') {
-                        if (pNode.constraint && astNode.tag !== pNode.constraint) {
+                        const tParts = astNode.tag.split(':');
+                        const tNs = tParts.length > 1 ? tParts[0] : undefined;
+                        const tLocal = tParts.length > 1 ? tParts[1] : tParts[0];
+
+                        // Проверка за namespace
+                        if (pNode.explicitNs !== undefined && pNode.explicitNs !== tNs) {
+                            matched = false; break;
+                        }
+
+                        // Проверка за ограничение на тага
+                        if (pNode.constraint && tLocal !== pNode.constraint) {
                             matched = false; break;
                         }
                     } else {
@@ -171,8 +233,8 @@ applyRule(xml, pattern, replacement) {
                     if (pNode.type === 'variable') {
                         matches[pNode.key] = {
                             node: astNode,
-
-                            removedClasses: pNode.mustHaveClasses || []
+                            removedClasses: pNode.mustHaveClasses || [],
+                            matchedNs: pNode.explicitNs // Записваме дали е търсен конкретен namespace
                         };
                     }
                 }
@@ -216,7 +278,27 @@ applyRule(xml, pattern, replacement) {
                 outputNode.classes = outputNode.classes.filter(c => !classesToRemove.includes(c));
             }
 
-            if (def.newTag) outputNode.tag = def.newTag;
+            const tParts = outputNode.tag.split(':');
+            const origNs = tParts.length > 1 ? tParts[0] : undefined;
+            const origLocal = tParts.length > 1 ? tParts[1] : tParts[0];
+
+            let finalLocal = def.newTag || origLocal;
+            let finalNs = origNs; 
+
+            if (def.ns !== undefined) {
+                // 1. Изрично добавяне/промяна на namespace в правилото (напр. foo:A)
+                finalNs = def.ns;
+            } else if (matchData.matchedNs !== undefined) {
+                // 2. Премахване на namespace (Търсен е foo:A, но е заменен само с A)
+                finalNs = undefined;
+            }
+            // 3. Ако нито едно от горните не е вярно (A -> A), пазим оригиналния namespace
+
+            if (finalNs) {
+                outputNode.tag = `${finalNs}:${finalLocal}`;
+            } else {
+                outputNode.tag = finalLocal;
+            }
 
             if (def.addId) {
                 outputNode.id = def.addId;
